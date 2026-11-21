@@ -1,0 +1,998 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How one Arden order lives</title>
+<style>
+  :root {
+    color-scheme: light;
+    --bg: #f6f4ef; --surface: #fffdf9; --ink: #1d2327; --muted: #5c6670; --line: #d9d4c8;
+    --accent: #0f6b5c; --accent-ink: #ffffff; --accent-soft: #dcefe9;
+    --neg: #a23b2a; --neg-soft: #f6e1dc; --warn: #8a5a00; --warn-soft: #f7ebcf;
+    --tag-bg: #ecebe4;
+    --shadow: 0 1px 2px rgba(29, 35, 39, .06), 0 6px 18px rgba(29, 35, 39, .06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --bg: #14181a; --surface: #1c2226; --ink: #e8e6e1; --muted: #9aa4ab; --line: #2e373c;
+      --accent: #5fc5b0; --accent-ink: #0d1f1c; --accent-soft: #1d3a35;
+      --neg: #e58a78; --neg-soft: #3a2420; --warn: #e2b85c; --warn-soft: #3a3019;
+      --tag-bg: #262e33;
+      --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 6px 18px rgba(0, 0, 0, .25);
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  .page { max-width: 1200px; margin: 0 auto; padding: 36px 24px 56px; }
+  .eyebrow { margin: 0 0 6px; font-size: 12px; font-weight: 600; letter-spacing: .09em; text-transform: uppercase; color: var(--accent); }
+  h1 { margin: 0 0 8px; font: 600 34px/1.15 "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif; text-wrap: balance; }
+  .lede { margin: 0 0 24px; max-width: 66ch; color: var(--muted); font-size: 16px; }
+
+  .group-label { margin: 18px 0 8px; font-size: 13px; font-weight: 600; }
+  .chips-row { display: flex; flex-wrap: wrap; gap: 8px; }
+  .opt {
+    display: flex; flex-direction: column; align-items: flex-start;
+    padding: 8px 14px; font: inherit; color: var(--ink); text-align: left;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 10px; cursor: pointer;
+    transition: border-color .2s, background .2s;
+  }
+  .opt:hover { border-color: var(--accent); }
+  .opt b { font-weight: 600; font-variant-numeric: tabular-nums; }
+  .opt small { color: var(--muted); font-size: 12px; }
+  .opt[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  .opt[aria-pressed="true"] small { color: inherit; opacity: .85; }
+  .blurb { margin: 10px 0 0; min-height: 1.5em; max-width: 72ch; }
+
+  .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin: 22px 0 8px; padding-top: 18px; border-top: 1px solid var(--line); }
+  .btns { display: flex; gap: 6px; }
+  .btn { padding: 7px 14px; font: inherit; font-weight: 500; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
+  .btn:hover:not(:disabled) { border-color: var(--accent); }
+  .btn:disabled { opacity: .45; cursor: default; }
+  .btn.primary { min-width: 76px; background: var(--ink); color: var(--bg); border-color: var(--ink); }
+  .progress-text { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+  .bar { height: 3px; background: var(--line); border-radius: 2px; overflow: hidden; margin-bottom: 22px; }
+  .bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .5s ease; }
+  :is(.opt, .btn, .step):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .layout { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 28px; align-items: start; }
+  .side { position: sticky; top: 16px; display: grid; gap: 16px; }
+
+  /* The life of the order: a line of steps */
+  .life { position: relative; display: grid; gap: 0; padding-left: 34px; }
+  .life::before { content: ""; position: absolute; left: 12px; top: 14px; bottom: 14px; width: 2px; background: var(--line); }
+  .gap { margin: 6px 0; padding: 2px 0 2px 2px; color: var(--warn); font-size: 12.5px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+  .gap::before { content: "⋮ "; margin-left: -29px; padding-right: 17px; color: var(--muted); }
+  .row { position: relative; padding: 5px 0; transition: opacity .35s; }
+  .row.unseen { opacity: .32; }
+  .dot {
+    position: absolute; left: -29px; top: 19px; width: 16px; height: 16px; border-radius: 50%;
+    background: var(--surface); border: 2px solid var(--line); transition: background .3s, border-color .3s, box-shadow .3s;
+  }
+  .row.done .dot { background: var(--accent); border-color: var(--accent); }
+  .row.active .dot { background: var(--accent); border-color: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); }
+  .step {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; width: 100%;
+    padding: 10px 12px; font: inherit; color: var(--ink); text-align: left;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 10px; cursor: pointer;
+    transition: border-color .25s, background .25s, box-shadow .25s;
+  }
+  .step:hover { border-color: var(--accent); }
+  .row.active .step { background: var(--accent-soft); border-color: var(--accent); box-shadow: var(--shadow); }
+  .step .ttl { font-weight: 600; }
+  .step .when { color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+  .step .pill { grid-row: 1 / span 2; grid-column: 2; align-self: center; padding: 1px 8px; border-radius: 999px; background: var(--tag-bg); font-size: 12px; font-weight: 600; white-space: nowrap; }
+  .step .pill.money { background: var(--neg-soft); color: var(--neg); }
+  .step .fields { display: none; grid-column: 1 / -1; margin-top: 4px; font: 11.5px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--muted); white-space: pre-line; overflow-wrap: anywhere; }
+  .life[data-pov="data"] .step .fields { display: block; }
+
+  .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 18px; }
+  .panel h2 { margin: 0 0 6px; font-size: 19px; line-height: 1.25; }
+  .kicker { margin: 0 0 6px; font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  .panel p { margin: 0; }
+  .note { margin-top: 10px !important; padding: 8px 10px; border-radius: 8px; background: var(--warn-soft); color: var(--warn); font-size: 13.5px; }
+  .facts { margin: 14px 0 0; padding: 12px 0 0; border-top: 1px solid var(--line); display: grid; gap: 8px; font-size: 13.5px; }
+  .facts div { display: grid; grid-template-columns: 84px 1fr; gap: 8px; }
+  .facts dt { color: var(--muted); }
+  .facts dd { margin: 0; font-variant-numeric: tabular-nums; }
+  .chips { display: flex; flex-wrap: wrap; gap: 4px; }
+  .chip { padding: 1px 7px; border-radius: 999px; background: var(--tag-bg); font-size: 12px; }
+  .report h2 { font-size: 15px; }
+  .report p { font-size: 14px; }
+  .report.moves { border-color: var(--neg); }
+  .report.moves .kicker { color: var(--neg); }
+
+  .lesson { margin: 30px 0 0; padding: 16px 20px; border-left: 4px solid var(--accent); background: var(--surface); border-radius: 0 12px 12px 0; }
+  .lesson b { display: block; font: 600 20px/1.3 "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif; }
+  .lesson span { color: var(--muted); }
+  .foot { margin: 26px 0 0; padding-top: 16px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; max-width: 80ch; }
+
+  @media (max-width: 980px) {
+    .layout { grid-template-columns: minmax(0, 1fr); gap: 18px; }
+    .side { position: static; order: -1; }
+  }
+  @media (max-width: 700px) {
+    .page { padding: 24px 16px 40px; }
+    h1 { font-size: 27px; }
+    .opt { flex: 1 1 150px; }
+  }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="page">
+  <header>
+    <p class="eyebrow">Understand the business</p>
+    <h1>How one Arden order lives</h1>
+    <p class="lede">Arden is a fictional online grocery market. An order is not finished when it is placed. It moves, and it can change days later. Pick an order, pick who is looking, and watch its life.</p>
+  </header>
+
+  <section aria-label="Pick an order">
+    <p class="group-label" id="story-label">1. Pick an order</p>
+    <div class="chips-row" id="stories" role="group" aria-labelledby="story-label"></div>
+  </section>
+
+  <section aria-label="Point of view">
+    <p class="group-label" id="pov-label">2. Pick who is looking</p>
+    <div class="chips-row" id="povs" role="group" aria-labelledby="pov-label"></div>
+    <p class="blurb" id="pov-blurb"></p>
+  </section>
+
+  <div class="toolbar">
+    <div class="btns">
+      <button class="btn" id="back" type="button">Back</button>
+      <button class="btn primary" id="play" type="button">Play</button>
+      <button class="btn" id="next" type="button">Next</button>
+      <button class="btn" id="restart" type="button">Restart</button>
+    </div>
+    <span class="progress-text" id="progress-text"></span>
+  </div>
+  <div class="bar" aria-hidden="true"><i id="bar"></i></div>
+
+  <main class="layout">
+    <div class="life" id="life" data-pov="customer"></div>
+
+    <aside class="side">
+      <section class="panel" id="detail" aria-label="Current step">
+        <p class="kicker" id="d-kicker"></p>
+        <h2 id="d-title"></h2>
+        <p id="d-what"></p>
+        <p class="note" id="d-note" hidden></p>
+        <dl class="facts" id="d-facts"></dl>
+      </section>
+      <section class="panel report" id="report" aria-label="What the daily report does">
+        <p class="kicker">The daily report</p>
+        <p id="r-text"></p>
+      </section>
+    </aside>
+  </main>
+
+  <p class="lesson"><b>Yesterday's orders are not the same today as they were yesterday.</b>
+  <span>A report is only right on the morning it was made. That is why this project is about loading orders that <em>changed</em>, not only orders that are new.</span></p>
+
+  <p class="foot">Use <kbd>←</kbd> and <kbd>→</kbd> to step. Everything here is fictional: Arden, its cities, its customers and its prices are invented for learning. The times and amounts on this page are written by <code>order_system/business_page.py</code> from the same generated orders the project loads.</p>
+</div>
+
+<script id="page-data" type="application/json">
+{
+ "povs": [
+  {
+   "id": "customer",
+   "name": "Customer",
+   "blurb": "What a shopper sees: I ordered, it came. Sometimes: I cancelled, or I got money back."
+  },
+  {
+   "id": "ops",
+   "name": "Operations",
+   "blurb": "What the packing and delivery teams see: every move of the order, from the shelf to the door."
+  },
+  {
+   "id": "finance",
+   "name": "Finance",
+   "blurb": "What finance sees: only the steps that change money. Each one changes the number of the day the order was placed."
+  },
+  {
+   "id": "city",
+   "name": "City manager",
+   "blurb": "What a city manager sees: how many orders their city took each day, and whether they arrived."
+  },
+  {
+   "id": "data",
+   "name": "Data engineer",
+   "blurb": "What you will build from: every change, with the fields it touched. Each change sets updated_at."
+  }
+ ],
+ "stories": [
+  {
+   "case": "P1",
+   "order_id": 1024,
+   "hint": "An ordinary order, delivered the next morning",
+   "city": "Northgate",
+   "utc_note": "The order system stores this moment as 2026-06-02T02:40:00Z. In UTC it is already the next day.",
+   "steps": [
+    {
+     "kind": "placed",
+     "title": "Order placed",
+     "when": "Mon 1 Jun, 21:40",
+     "gap": "",
+     "what": "A customer in Northgate orders: 2 × Oat milk 1L, 1 × Sourdough loaf, 3 × Avocado, 1 × Eggs, 12. The total is $22.49.",
+     "report": "Monday 1 June gains 1 order and $22.49.",
+     "late": null,
+     "status": "placed",
+     "total": "$22.49",
+     "refunded": "$0.00",
+     "fields": [
+      "a new row"
+     ],
+     "seen_by": [
+      "customer",
+      "ops",
+      "finance",
+      "city",
+      "data"
+     ]
+    },
+    {
+     "kind": "packed",
+     "title": "Packed",
+     "when": "Tue 2 Jun, 07:40",
+     "gap": "the next day",
+     "what": "A worker takes the items off the shelf and packs the bag.",
+     "report": "No change to the report.",
+     "late": null,
+     "status": "packed",
+     "total": "$22.49",
+     "refunded": "$0.00",
+     "fields": [
+      "status: placed → packed",
+      "updated_at: 2026-06-02T02:40:00Z → 2026-06-02T12:40:00Z"
+     ],
+     "seen_by": [
+      "ops",
+      "data"
+     ]
+    },
+    {
+     "kind": "out_for_delivery",
+     "title": "Out for delivery",
+     "when": "Tue 2 Jun, 08:20",
+     "gap": "",
+     "what": "A driver picks up the bag and leaves for the customer's address.",
+     "report": "No change to the report.",
+     "late": null,
+     "status": "out_for_delivery",
+     "total": "$22.49",
+     "refunded": "$0.00",
+     "fields": [
+      "status: packed → out_for_delivery",
+      "updated_at: 2026-06-02T12:40:00Z → 2026-06-02T13:20:00Z"
+     ],
+     "seen_by": [
+      "customer",
+      "ops",
+      "data"
+     ]
+    },
+    {
+     "kind": "delivered",
+     "title": "Delivered",
+     "when": "Tue 2 Jun, 09:15",
+     "gap": "",
+     "what": "The driver hands over the bag and confirms it in the app.",
+     "report": "No change to the report.",
+     "late": null,
+     "status": "delivered",
+     "total": "$22.49",
+     "refunded": "$0.00",
+     "fields": [
+      "status: out_for_delivery → delivered",
+      "updated_at: 2026-06-02T13:20:00Z → 2026-06-02T14:15:00Z",
+      "delivered_at: null → 2026-06-02T14:15:00Z"
+     ],
+     "seen_by": [
+      "customer",
+      "ops",
+      "city",
+      "data"
+     ]
+    }
+   ]
+  },
+  {
+   "case": "P2",
+   "order_id": 1091,
+   "hint": "Cancelled the day after it was placed",
+   "city": "Riverbend",
+   "utc_note": "The order system stores this moment as 2026-06-04T01:15:00Z. In UTC it is already the next day.",
+   "steps": [
+    {
+     "kind": "placed",
+     "title": "Order placed",
+     "when": "Wed 3 Jun, 20:15",
+     "gap": "",
+     "what": "A customer in Riverbend orders: 1 × Chicken breast 500g, 2 × Basmati rice 1kg, 1 × Greek yogurt 500g. The total is $20.56.",
+     "report": "Wednesday 3 June gains 1 order and $20.56.",
+     "late": null,
+     "status": "placed",
+     "total": "$20.56",
+     "refunded": "$0.00",
+     "fields": [
+      "a new row"
+     ],
+     "seen_by": [
+      "customer",
+      "ops",
+      "finance",
+      "city",
+      "data"
+     ]
+    },
+    {
+     "kind": "packed",
+     "title": "Packed",
+     "when": "Wed 3 Jun, 20:50",
+     "gap": "",
+     "what": "A worker takes the items off the shelf and packs the bag.",
+     "report": "No change to the report.",
+     "late": null,
+     "status": "packed",
+     "total": "$20.56",
+     "refunded": "$0.00",
+     "fields": [
+      "status: placed → packed",
+      "updated_at: 2026-06-04T01:15:00Z → 2026-06-04T01:50:00Z"
+     ],
+     "seen_by": [
+      "ops",
+      "data"
+     ]
+    },
+    {
+     "kind": "cancelled",
+     "title": "Cancelled",
+     "when": "Thu 4 Jun, 08:30",
+     "gap": "the next day",
+     "what": "The customer cancels the order before it leaves. It is not a sale any more.",
+     "report": "Wednesday 3 June loses 1 order and $20.56.",
+     "late": null,
+     "status": "cancelled",
+     "total": "$20.56",
+     "refunded": "$0.00",
+     "fields": [
+      "status: packed → cancelled",
+      "updated_at: 2026-06-04T01:50:00Z → 2026-06-04T13:30:00Z",
+      "cancelled_at: null → 2026-06-04T13:30:00Z"
+     ],
+     "seen_by": [
+      "customer",
+      "ops",
+      "finance",
+      "city",
+      "data"
+     ]
+    }
+   ]
+  },
+  {
+   "case": "P3",
+   "order_id": 1125,
+   "hint": "An item was out of stock",
+   "city": "Lakeshore",
+   "utc_note": "The order system stores this moment as 2026-06-05T03:30:00Z. In UTC it is already the next day.",
+   "steps": [
+    {
+     "kind": "placed",
+     "title": "Order placed",
+     "when": "Thu 4 Jun, 22:30",
+     "gap": "",
+     "what": "A customer in Lakeshore orders: 2 × Salmon fillet, 1 × Baby spinach, 1 × Strawberries 400g, 4 × Sparkling water. The total is $36.94.",
+     "report": "Thursday 4 June gains 1 order and $36.94.",
+     "late": null,
+     "status": "placed",
+     "total": "$36.94",
+     "refunded": "$0.00",
+     "fields": [
+      "a new row"
+     ],
+     "seen_by": [
+      "customer",
+      "ops",
+      "finance",
+      "city",
+      "data"
+     ]
+    },
+    {
+     "kind": "out_of_stock",
+     "title": "Packed, one item missing",
+     "when": "Fri 5 Jun, 08:10",
+     "gap": "the next day",
+     "what": "The Strawberries 400g are out of stock. The bag is packed without them, and the total drops from $36.94 to $32.35.",
+     "report": "Thursday 4 June loses $4.59. The order still counts.",
+     "late": null,
+     "status": "packed",
+     "total": "$32.35",
+     "refunded": "$0.00",
+     "fields": [
+      "status: placed → packed",
+      "updated_at: 2026-06-05T03:30:00Z → 2026-06-05T13:10:00Z",
+      "total_cents: 3694 → 3235",
+      "items[3].item_status: ok → out_of_stock"
+     ],
+     "seen_by": [
+      "customer",
+      "ops",
+      "finance",
+      "data"
+     ]
+    },
+    {
+     "kind": "out_for_delivery",
+     "title": "Out for delivery",
+     "when": "Fri 5 Jun, 08:50",
+     "gap": "",
+     "what": "A driver picks up the bag and leaves for the customer's address.",
+     "report": "No change to the report.",
+     "late": null,
+     "status": "out_for_delivery",
+     "total": "$32.35",
+     "refunded": "$0.00",
+     "fields": [
+      "status: packed → out_for_delivery",
+      "updated_at: 2026-06-05T13:10:00Z → 2026-06-05T13:50:00Z"
+     ],
+     "seen_by": [
+      "customer",
+      "ops",
+      "data"
+     ]
+    },
+    {
+     "kind": "delivered",
+     "title": "Delivered",
+     "when": "Fri 5 Jun, 09:40",
+     "gap": "",
+     "what": "The driver hands over the bag and confirms it in the app.",
+     "report": "No change to the report.",
+     "late": null,
+     "status": "delivered",
+     "total": "$32.35",
+     "refunded": "$0.00",
+     "fields": [
+      "status: out_for_delivery → delivered",
+      "updated_at: 2026-06-05T13:50:00Z → 2026-06-05T14:40:00Z",
+      "delivered_at: null → 2026-06-05T14:40:00Z"
+     ],
+     "seen_by": [
+      "customer",
+      "ops",
+      "city",
+      "data"
+     ]
+    }
+   ]
+  },
+  {
+   "case": "P4",
+   "order_id": 1130,
+   "hint": "Refunded three days after delivery",
+   "city": "Northgate",
+   "utc_note": "",
+   "steps": [
+    {
+     "kind": "placed",
+     "title": "Order placed",
+     "when": "Fri 5 Jun, 10:20",
+     "gap": "",
+     "what": "A customer in Northgate orders: 2 × Whole milk 2L, 1 × Cheddar 200g, 1 × Pasta 500g, 1 × Tomato sauce. The total is $14.75.",
+     "report": "Friday 5 June gains 1 order and $14.75.",
+     "late": null,
+     "status": "placed",
+     "total": "$14.75",
+     "refunded": "$0.00",
+     "fields": [
+      "a new row"
+     ],
+     "seen_by": [
+      "customer",
+      "ops",
+      "finance",
+      "city",
+      "data"
+     ]
+    },
+    {
+     "kind": "packed",
+     "title": "Packed",
+     "when": "Fri 5 Jun, 10:50",
+     "gap": "",
+     "what": "A worker takes the items off the shelf and packs the bag.",
+     "report": "No change to the report.",
+     "late": null,
+     "status": "packed",
+     "total": "$14.75",
+     "refunded": "$0.00",
+     "fields": [
+      "status: placed → packed",
+      "updated_at: 2026-06-05T15:20:00Z → 2026-06-05T15:50:00Z"
+     ],
+     "seen_by": [
+      "ops",
+      "data"
+     ]
+    },
+    {
+     "kind": "out_for_delivery",
+     "title": "Out for delivery",
+     "when": "Fri 5 Jun, 14:55",
+     "gap": "",
+     "what": "A driver picks up the bag and leaves for the customer's address.",
+     "report": "No change to the report.",
+     "late": null,
+     "status": "out_for_delivery",
+     "total": "$14.75",
+     "refunded": "$0.00",
+     "fields": [
+      "status: packed → out_for_delivery",
+      "updated_at: 2026-06-05T15:50:00Z → 2026-06-05T19:55:00Z"
+     ],
+     "seen_by": [
+      "customer",
+      "ops",
+      "data"
+     ]
+    },
+    {
+     "kind": "delivered",
+     "title": "Delivered",
+     "when": "Fri 5 Jun, 15:45",
+     "gap": "",
+     "what": "The driver hands over the bag and confirms it in the app.",
+     "report": "No change to the report.",
+     "late": null,
+     "status": "delivered",
+     "total": "$14.75",
+     "refunded": "$0.00",
+     "fields": [
+      "status: out_for_delivery → delivered",
+      "updated_at: 2026-06-05T19:55:00Z → 2026-06-05T20:45:00Z",
+      "delivered_at: null → 2026-06-05T20:45:00Z"
+     ],
+     "seen_by": [
+      "customer",
+      "ops",
+      "city",
+      "data"
+     ]
+    },
+    {
+     "kind": "refund",
+     "title": "Refund given",
+     "when": "Mon 8 Jun, 11:00",
+     "gap": "3 days later",
+     "what": "The customer reports a problem and gets $5.78 back.",
+     "report": "Friday 5 June loses $5.78. The order still counts.",
+     "late": null,
+     "status": "delivered",
+     "total": "$14.75",
+     "refunded": "$5.78",
+     "fields": [
+      "updated_at: 2026-06-05T20:45:00Z → 2026-06-08T16:00:00Z",
+      "refunded_cents: 0 → 578",
+      "refunded_at: null → 2026-06-08T16:00:00Z"
+     ],
+     "seen_by": [
+      "customer",
+      "finance",
+      "data"
+     ]
+    }
+   ]
+  },
+  {
+   "case": "P5",
+   "order_id": 1196,
+   "hint": "Placed two minutes before midnight",
+   "city": "Riverbend",
+   "utc_note": "The order system stores this moment as 2026-06-07T04:58:12Z. In UTC it is already the next day.",
+   "steps": [
+    {
+     "kind": "placed",
+     "title": "Order placed",
+     "when": "Sat 6 Jun, 23:58",
+     "gap": "",
+     "what": "A customer in Riverbend orders: 1 × Ice cream 500ml, 2 × Bananas, bunch, 1 × Coffee beans 250g. The total is $17.96.",
+     "report": "Saturday 6 June gains 1 order and $17.96.",
+     "late": null,
+     "status": "placed",
+     "total": "$17.96",
+     "refunded": "$0.00",
+     "fields": [
+      "a new row"
+     ],
+     "seen_by": [
+      "customer",
+      "ops",
+      "finance",
+      "city",
+      "data"
+     ]
+    },
+    {
+     "kind": "packed",
+     "title": "Packed",
+     "when": "Sun 7 Jun, 07:45",
+     "gap": "the next day",
+     "what": "A worker takes the items off the shelf and packs the bag.",
+     "report": "No change to the report.",
+     "late": null,
+     "status": "packed",
+     "total": "$17.96",
+     "refunded": "$0.00",
+     "fields": [
+      "status: placed → packed",
+      "updated_at: 2026-06-07T04:58:12Z → 2026-06-07T12:45:00Z"
+     ],
+     "seen_by": [
+      "ops",
+      "data"
+     ]
+    },
+    {
+     "kind": "out_for_delivery",
+     "title": "Out for delivery",
+     "when": "Sun 7 Jun, 08:30",
+     "gap": "",
+     "what": "A driver picks up the bag and leaves for the customer's address.",
+     "report": "No change to the report.",
+     "late": null,
+     "status": "out_for_delivery",
+     "total": "$17.96",
+     "refunded": "$0.00",
+     "fields": [
+      "status: packed → out_for_delivery",
+      "updated_at: 2026-06-07T12:45:00Z → 2026-06-07T13:30:00Z"
+     ],
+     "seen_by": [
+      "customer",
+      "ops",
+      "data"
+     ]
+    },
+    {
+     "kind": "delivered",
+     "title": "Delivered",
+     "when": "Sun 7 Jun, 09:20",
+     "gap": "",
+     "what": "The driver hands over the bag and confirms it in the app.",
+     "report": "No change to the report.",
+     "late": null,
+     "status": "delivered",
+     "total": "$17.96",
+     "refunded": "$0.00",
+     "fields": [
+      "status: out_for_delivery → delivered",
+      "updated_at: 2026-06-07T13:30:00Z → 2026-06-07T14:20:05Z",
+      "delivered_at: null → 2026-06-07T14:20:05Z"
+     ],
+     "seen_by": [
+      "customer",
+      "ops",
+      "city",
+      "data"
+     ]
+    }
+   ]
+  },
+  {
+   "case": "P6",
+   "order_id": 1244,
+   "hint": "A change that showed up late",
+   "city": "Lakeshore",
+   "utc_note": "The order system stores this moment as 2026-06-09T01:10:00Z. In UTC it is already the next day.",
+   "steps": [
+    {
+     "kind": "placed",
+     "title": "Order placed",
+     "when": "Mon 8 Jun, 20:10",
+     "gap": "",
+     "what": "A customer in Lakeshore orders: 1 × Olive oil 500ml, 2 × Tomatoes 500g, 1 × Mozzarella. The total is $18.26.",
+     "report": "Monday 8 June gains 1 order and $18.26.",
+     "late": null,
+     "status": "placed",
+     "total": "$18.26",
+     "refunded": "$0.00",
+     "fields": [
+      "a new row"
+     ],
+     "seen_by": [
+      "customer",
+      "ops",
+      "finance",
+      "city",
+      "data"
+     ]
+    },
+    {
+     "kind": "packed",
+     "title": "Packed",
+     "when": "Mon 8 Jun, 20:35",
+     "gap": "",
+     "what": "A worker takes the items off the shelf and packs the bag.",
+     "report": "No change to the report.",
+     "late": null,
+     "status": "packed",
+     "total": "$18.26",
+     "refunded": "$0.00",
+     "fields": [
+      "status: placed → packed",
+      "updated_at: 2026-06-09T01:10:00Z → 2026-06-09T01:35:00Z"
+     ],
+     "seen_by": [
+      "ops",
+      "data"
+     ]
+    },
+    {
+     "kind": "out_for_delivery",
+     "title": "Out for delivery",
+     "when": "Mon 8 Jun, 21:00",
+     "gap": "",
+     "what": "A driver picks up the bag and leaves for the customer's address.",
+     "report": "No change to the report.",
+     "late": null,
+     "status": "out_for_delivery",
+     "total": "$18.26",
+     "refunded": "$0.00",
+     "fields": [
+      "status: packed → out_for_delivery",
+      "updated_at: 2026-06-09T01:35:00Z → 2026-06-09T02:00:00Z"
+     ],
+     "seen_by": [
+      "customer",
+      "ops",
+      "data"
+     ]
+    },
+    {
+     "kind": "cancelled",
+     "title": "Cancelled",
+     "when": "Mon 8 Jun, 21:35",
+     "gap": "",
+     "what": "The customer refuses the bag at the door. The order is cancelled. It is not a sale any more.",
+     "report": "Monday 8 June loses 1 order and $18.26.",
+     "late": "The driver's phone was offline. The order system showed this change only at Tue 9 Jun, 10:15: 12 hours and 40 minutes late. Its updated_at still says Mon 8 Jun, 21:35.",
+     "status": "cancelled",
+     "total": "$18.26",
+     "refunded": "$0.00",
+     "fields": [
+      "status: out_for_delivery → cancelled",
+      "updated_at: 2026-06-09T02:00:00Z → 2026-06-09T02:35:00Z",
+      "cancelled_at: null → 2026-06-09T02:35:00Z"
+     ],
+     "seen_by": [
+      "customer",
+      "ops",
+      "finance",
+      "city",
+      "data"
+     ]
+    }
+   ]
+  },
+  {
+   "case": "P8",
+   "order_id": 1356,
+   "hint": "A test order that was deleted",
+   "city": "Northgate",
+   "utc_note": "",
+   "steps": [
+    {
+     "kind": "placed",
+     "title": "Order placed",
+     "when": "Fri 12 Jun, 14:00",
+     "gap": "",
+     "what": "A tester in Northgate orders: 1 × Coffee beans 250g, 1 × Sourdough loaf. The total is $14.24.",
+     "report": "Friday 12 June gains 1 order and $14.24.",
+     "late": null,
+     "status": "placed",
+     "total": "$14.24",
+     "refunded": "$0.00",
+     "fields": [
+      "a new row"
+     ],
+     "seen_by": [
+      "customer",
+      "ops",
+      "finance",
+      "city",
+      "data"
+     ]
+    },
+    {
+     "kind": "deleted",
+     "title": "Deleted from the order system",
+     "when": "Sat 13 Jun, 11:00",
+     "gap": "the next day",
+     "what": "It was a test order. Someone removes it from the order system. No trace is left.",
+     "report": "Friday 12 June should lose 1 order and $14.24. But nothing tells the pipeline.",
+     "late": null,
+     "status": "deleted",
+     "total": "$14.24",
+     "refunded": "$0.00",
+     "fields": [
+      "the whole row is gone"
+     ],
+     "seen_by": [
+      "finance",
+      "data"
+     ]
+    }
+   ]
+  }
+ ]
+}
+</script>
+<script>
+(function () {
+  'use strict';
+  var DATA = JSON.parse(document.getElementById('page-data').textContent);
+  var STEP_MS = 4500;
+  var $ = function (id) { return document.getElementById(id); };
+  var state = { story: 0, pov: 'customer', step: 0, playing: false };
+  var timer = null, rows = [];
+
+  function el(tag, cls, text) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text != null) e.textContent = text;
+    return e;
+  }
+  function story() { return DATA.stories[state.story]; }
+  function seen(step) { return step.seen_by.indexOf(state.pov) !== -1; }
+  function visible() {
+    var list = [];
+    story().steps.forEach(function (s, i) { if (seen(s)) list.push(i); });
+    return list;
+  }
+
+  DATA.stories.forEach(function (s, i) {
+    var b = el('button', 'opt');
+    b.type = 'button';
+    b.appendChild(el('b', null, 'Order ' + s.order_id));
+    b.appendChild(el('small', null, s.hint));
+    b.addEventListener('click', function () { pause(); state.story = i; buildLife(); go(visible()[0]); });
+    $('stories').appendChild(b);
+  });
+  DATA.povs.forEach(function (p) {
+    var b = el('button', 'opt');
+    b.type = 'button';
+    b.dataset.pov = p.id;
+    b.appendChild(el('b', null, p.name));
+    b.addEventListener('click', function () { pause(); setPov(p.id); });
+    $('povs').appendChild(b);
+  });
+
+  function buildLife() {
+    var life = $('life');
+    life.textContent = '';
+    rows = [];
+    story().steps.forEach(function (s, i) {
+      if (s.gap) life.appendChild(el('div', 'gap', s.gap));
+      var row = el('div', 'row');
+      row.appendChild(el('span', 'dot'));
+      var btn = el('button', 'step');
+      btn.type = 'button';
+      btn.appendChild(el('span', 'ttl', s.title));
+      var moves = s.report.indexOf('No change') !== 0;
+      btn.appendChild(el('span', 'pill' + (moves && i > 0 ? ' money' : ''), s.status === 'deleted' ? 'gone' : s.total));
+      btn.appendChild(el('span', 'when', s.when));
+      btn.appendChild(el('span', 'fields', s.fields.join('\n')));
+      btn.addEventListener('click', function () { pause(); go(i); });
+      row.appendChild(btn);
+      life.appendChild(row);
+      rows.push(row);
+    });
+  }
+
+  function addFact(label, node) {
+    var row = el('div');
+    row.appendChild(el('dt', null, label));
+    var dd = el('dd');
+    dd.appendChild(node);
+    row.appendChild(dd);
+    $('d-facts').appendChild(row);
+  }
+
+  function render() {
+    var st = story(), step = st.steps[state.step], vis = visible(), at = vis.indexOf(state.step);
+    $('life').dataset.pov = state.pov;
+    rows.forEach(function (row, i) {
+      row.classList.toggle('active', i === state.step);
+      row.classList.toggle('done', i < state.step);
+      row.classList.toggle('unseen', !seen(st.steps[i]));
+    });
+    Array.prototype.forEach.call($('stories').children, function (b, i) { b.setAttribute('aria-pressed', String(i === state.story)); });
+    Array.prototype.forEach.call($('povs').children, function (b) { b.setAttribute('aria-pressed', String(b.dataset.pov === state.pov)); });
+    $('pov-blurb').textContent = DATA.povs.filter(function (p) { return p.id === state.pov; })[0].blurb;
+
+    $('d-kicker').textContent = 'Order ' + st.order_id + ' · ' + st.city + ' · ' + step.when;
+    $('d-title').textContent = step.title;
+    $('d-what').textContent = step.what;
+    var note = step.late || (state.step === 0 ? st.utc_note : '');
+    $('d-note').hidden = !note;
+    $('d-note').textContent = note;
+
+    $('d-facts').textContent = '';
+    addFact('Status', el('span', null, step.status));
+    addFact('Total', el('span', null, step.total));
+    addFact('Refunded', el('span', null, step.refunded));
+    if (state.pov === 'data') addFact('Changed', el('code', null, step.fields.join('; ')));
+    var chips = el('span', 'chips');
+    DATA.povs.forEach(function (p) { if (step.seen_by.indexOf(p.id) !== -1) chips.appendChild(el('span', 'chip', p.name)); });
+    addFact('Seen by', chips);
+
+    $('r-text').textContent = step.report;
+    $('report').classList.toggle('moves', step.report.indexOf('No change') !== 0 && state.step > 0);
+
+    $('progress-text').textContent = 'Step ' + (at + 1) + ' of ' + vis.length + ' for this point of view';
+    $('bar').style.width = ((at + 1) / vis.length * 100) + '%';
+    $('back').disabled = at <= 0;
+    $('next').disabled = at === vis.length - 1;
+    $('play').textContent = state.playing ? 'Pause' : (at === vis.length - 1 ? 'Replay' : 'Play');
+  }
+
+  function go(index) { state.step = index; render(); schedule(); }
+  function move(delta) {
+    var vis = visible(), at = vis.indexOf(state.step) + delta;
+    if (at < 0 || at >= vis.length) return false;
+    go(vis[at]);
+    return true;
+  }
+  function schedule() {
+    clearTimeout(timer);
+    if (!state.playing) return;
+    timer = setTimeout(function () { if (!move(1)) { state.playing = false; render(); } }, STEP_MS);
+  }
+  function pause() { state.playing = false; clearTimeout(timer); }
+  function setPov(pov) {
+    state.pov = pov;
+    var vis = visible();
+    if (vis.indexOf(state.step) === -1) {
+      // Fall back to the last step this point of view can see.
+      var earlier = vis.filter(function (i) { return i < state.step; });
+      state.step = earlier.length ? earlier[earlier.length - 1] : vis[0];
+    }
+    render();
+  }
+
+  $('back').addEventListener('click', function () { pause(); move(-1); render(); });
+  $('next').addEventListener('click', function () { pause(); move(1); render(); });
+  $('restart').addEventListener('click', function () { pause(); go(visible()[0]); });
+  $('play').addEventListener('click', function () {
+    if (state.playing) { pause(); render(); return; }
+    var vis = visible();
+    state.playing = true;
+    if (state.step === vis[vis.length - 1]) go(vis[0]); else { render(); schedule(); }
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.key === 'ArrowRight') { pause(); move(1); render(); }
+    if (e.key === 'ArrowLeft') { pause(); move(-1); render(); }
+  });
+
+  // A link can open one story: arden_orders.html#story=4&pov=finance&step=5
+  location.hash.slice(1).split('&').forEach(function (part) {
+    var pair = part.split('=');
+    if (pair[0] === 'story' && DATA.stories[pair[1] - 1]) state.story = pair[1] - 1;
+    if (pair[0] === 'pov' && DATA.povs.some(function (p) { return p.id === pair[1]; })) state.pov = pair[1];
+    if (pair[0] === 'step') state.wanted = pair[1] - 1;
+  });
+  buildLife();
+  if (story().steps[state.wanted]) state.step = state.wanted;
+  setPov(state.pov);
+})();
+</script>
+</body>
+</html>

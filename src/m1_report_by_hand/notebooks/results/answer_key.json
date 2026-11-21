@@ -1,0 +1,45 @@
+{
+  "run_date": "2026-06-08",
+  "yesterday": {
+    "order_date": "2026-06-07",
+    "orders": 30,
+    "revenue_cents": 80711,
+    "by_city": {
+      "LKS": {
+        "orders": 6,
+        "revenue_cents": 14498
+      },
+      "RVB": {
+        "orders": 14,
+        "revenue_cents": 30687
+      },
+      "NGT": {
+        "orders": 10,
+        "revenue_cents": 35526
+      }
+    }
+  },
+  "day_before": {
+    "order_date": "2026-06-06",
+    "orders": 33,
+    "revenue_cents": 78671,
+    "by_city": {
+      "LKS": {
+        "orders": 9,
+        "revenue_cents": 20078
+      },
+      "RVB": {
+        "orders": 7,
+        "revenue_cents": 18994
+      },
+      "NGT": {
+        "orders": 17,
+        "revenue_cents": 39599
+      }
+    }
+  },
+  "change": {
+    "orders": -3,
+    "revenue_cents": 2040
+  }
+}
