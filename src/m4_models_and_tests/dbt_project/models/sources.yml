@@ -1,0 +1,21 @@
+version: 2
+
+sources:
+  - name: raw
+    description: Data exactly as it arrived. The Python load writes it, by appending. dbt only reads it.
+    schema: raw
+    loaded_at_field: loaded_at
+    freshness:                       # is the newest raw row recent enough?
+      warn_after: {count: 24, period: hour}
+      error_after: {count: 48, period: hour}
+    tables:
+      - name: orders_landing
+        description: One row for every order the API sent, every time it sent it.
+        columns:
+          - name: landing_id
+            tests: [unique, not_null]
+          - name: payload
+            tests: [not_null]
+      - name: order_deletes
+        description: One row for every delete read from the order system's change feed.
+        freshness: null              # a day without deletes is normal

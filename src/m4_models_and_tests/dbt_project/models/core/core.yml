@@ -1,0 +1,55 @@
+version: 2
+
+models:
+  - name: orders
+    description: One row per order, with its latest state. The grain is one order.
+    columns:
+      - name: order_id
+        description: The key. One row per order.
+        tests: [unique, not_null]
+      - name: status
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [placed, packed, out_for_delivery, delivered, cancelled]
+      - name: city
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('cities')
+                field: city
+      - name: city_name
+        tests: [not_null]
+      - name: order_date
+        tests: [not_null]
+      - name: total_cents
+        tests: [not_null]
+      - name: refunded_cents
+        tests: [not_null]
+
+  - name: order_items
+    description: One row per item line. The grain is one line of one order.
+    columns:
+      - name: order_id
+        tests:
+          - not_null
+          - relationships:          # every item belongs to an order
+              arguments:
+                to: ref('orders')
+                field: order_id
+      - name: line_no
+        tests: [not_null]
+      - name: item_status
+        tests:
+          - accepted_values:
+              arguments:
+                values: [ok, out_of_stock]
+
+seeds:
+  - name: cities
+    description: Arden's three cities. A small table kept in the project, as a CSV file.
+    columns:
+      - name: city
+        tests: [unique, not_null]

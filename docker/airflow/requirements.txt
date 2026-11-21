@@ -1,0 +1,8 @@
+# What the pipeline and the fake order system need inside the container.
+# The same packages as pyproject.toml, without the notebook and test tools.
+dbt-postgres>=1.9.0
+fastapi>=0.115.0
+httpx>=0.28.0
+psycopg[binary]>=3.2.0
+tzdata>=2025.2
+uvicorn>=0.34.0

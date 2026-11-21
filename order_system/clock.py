@@ -19,6 +19,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Read or move the order system's clock.")
     parser.add_argument("--morning", help="a date, like 2026-06-08")
     parser.add_argument("--advance-days", type=int)
+    parser.add_argument("--advance-minutes", type=int)
+    parser.add_argument("--now", help="a UTC moment, like 2026-06-12T17:00:00Z")
     parser.add_argument("--reset", action="store_true")
     args = parser.parse_args()
     try:
@@ -29,6 +31,10 @@ def main() -> int:
                 answer = client.post("/admin/clock", json={"morning": args.morning})
             elif args.advance_days is not None:
                 answer = client.post("/admin/clock", json={"advance_days": args.advance_days})
+            elif args.advance_minutes is not None:
+                answer = client.post("/admin/clock", json={"advance_minutes": args.advance_minutes})
+            elif args.now:
+                answer = client.post("/admin/clock", json={"now": args.now})
             else:
                 answer = client.get("/admin/clock")
     except httpx.ConnectError:

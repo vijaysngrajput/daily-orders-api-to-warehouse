@@ -1,0 +1,1513 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Milestone 5 flow: On a schedule</title>
+<style>
+  :root {
+    color-scheme: light;
+    --bg: #f6f4ef;
+    --surface: #fffdf9;
+    --ink: #1d2327;
+    --muted: #5c6670;
+    --line: #d9d4c8;
+    --accent: #0f6b5c;
+    --accent-ink: #ffffff;
+    --accent-soft: #dcefe9;
+    --neg: #a23b2a;
+    --neg-soft: #f6e1dc;
+    --pos: #1f6f43;
+    --pos-soft: #dff0e5;
+    --warn: #8a5a00;
+    --warn-soft: #f7ebcf;
+    --tag-bg: #ecebe4;
+    --shadow: 0 1px 2px rgba(29, 35, 39, .06), 0 6px 18px rgba(29, 35, 39, .06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --bg: #14181a;
+      --surface: #1c2226;
+      --ink: #e8e6e1;
+      --muted: #9aa4ab;
+      --line: #2e373c;
+      --accent: #5fc5b0;
+      --accent-ink: #0d1f1c;
+      --accent-soft: #1d3a35;
+      --neg: #e58a78;
+      --neg-soft: #3a2420;
+      --pos: #7fd0a0;
+      --pos-soft: #1d3527;
+      --warn: #e2b85c;
+      --warn-soft: #3a3019;
+      --tag-bg: #262e33;
+      --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 6px 18px rgba(0, 0, 0, .25);
+    }
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  .page { max-width: 1240px; margin: 0 auto; padding: 32px 24px 56px; }
+
+  .eyebrow {
+    margin: 0 0 6px;
+    font-size: 12px; font-weight: 600; letter-spacing: .09em; text-transform: uppercase;
+    color: var(--accent);
+  }
+  h1 {
+    margin: 0 0 8px;
+    font: 600 34px/1.15 "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    text-wrap: balance;
+  }
+  .lede { margin: 0 0 22px; max-width: 68ch; color: var(--muted); font-size: 16px; }
+
+  /* Follow one order */
+  .pick-label { margin: 0 0 8px; font-size: 13px; font-weight: 600; }
+  .picks { display: flex; flex-wrap: wrap; gap: 8px; }
+  .pick {
+    display: flex; flex-direction: column; align-items: flex-start;
+    padding: 8px 14px; min-width: 150px;
+    font: inherit; color: var(--ink); text-align: left;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 10px; cursor: pointer;
+    transition: border-color .2s, background .2s;
+  }
+  .pick:hover { border-color: var(--accent); }
+  .pick b { font-weight: 600; font-variant-numeric: tabular-nums; }
+  .pick small { color: var(--muted); font-size: 12px; }
+  .pick[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  .pick[aria-pressed="true"] small { color: inherit; opacity: .85; }
+
+  /* Playback toolbar */
+  .toolbar {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px;
+    margin: 20px 0 8px; padding-top: 16px; border-top: 1px solid var(--line);
+  }
+  .btns { display: flex; flex-wrap: wrap; gap: 6px; }
+  .btn {
+    padding: 7px 14px; font: inherit; font-weight: 500; color: var(--ink);
+    background: var(--surface); border: 1px solid var(--line); border-radius: 8px; cursor: pointer;
+  }
+  .btn:hover:not(:disabled) { border-color: var(--accent); }
+  .btn:disabled { opacity: .45; cursor: default; }
+  .btn.primary { min-width: 76px; background: var(--ink); color: var(--bg); border-color: var(--ink); }
+  .progress-text { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+  .clock {
+    margin-left: auto; padding: 4px 10px; border-radius: 999px;
+    background: var(--tag-bg); font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums;
+  }
+  .bar { height: 3px; background: var(--line); border-radius: 2px; overflow: hidden; margin-bottom: 20px; }
+  .bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .5s ease; }
+  :is(.pick, .btn, .stage):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* Layout */
+  .layout { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 26px; align-items: start; }
+  .side { position: sticky; top: 16px; display: grid; gap: 14px; }
+
+  /* The pipeline map */
+  .diagram { position: relative; }
+  .lane { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 22px; align-items: stretch; }
+  .stage {
+    position: relative; display: flex; flex-direction: column; min-height: 330px;
+    padding: 10px; text-align: left; font: inherit; color: var(--ink);
+    background: var(--surface); border: 2px solid var(--line); border-radius: 12px;
+    transition: border-color .3s, box-shadow .3s, background .3s;
+  }
+  .stage + .stage::before { /* arrow from the stage before */
+    content: "\2192"; position: absolute; left: -19px; top: 20px;
+    color: var(--muted); font-size: 16px; line-height: 1;
+  }
+  .stage.ghost { border-style: dashed; background: transparent; color: var(--muted); }
+  .stage.active { border-color: var(--accent); box-shadow: var(--shadow); }
+  .stage.active.problem { border-color: var(--neg); }
+  .stage.active.fix { border-color: var(--pos); }
+  .role { font-size: 10.5px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+  .name { margin: 1px 0 6px; font-size: 14.5px; font-weight: 600; line-height: 1.25; }
+  .badge {
+    align-self: flex-start; padding: 1px 7px; border-radius: 999px;
+    font-size: 11px; font-weight: 600; background: var(--tag-bg); color: var(--muted);
+  }
+  .badge.new { background: var(--accent-soft); color: var(--accent); }
+  .count {
+    margin: 8px 0 6px; min-height: 20px;
+    font-size: 12.5px; font-weight: 600; font-variant-numeric: tabular-nums;
+  }
+  .stage.active.problem .count { color: var(--neg); }
+  .stage.active.fix .count { color: var(--pos); }
+  .ghost-note { margin: 8px 0 0; font-size: 12.5px; line-height: 1.4; }
+  .cards { display: grid; gap: 5px; align-content: start; }
+  .card {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0 6px;
+    padding: 5px 7px; border: 1px solid var(--line); border-radius: 7px; background: var(--bg);
+    font-size: 12px; line-height: 1.3; font-variant-numeric: tabular-nums;
+    animation: arrive .45s ease both;
+  }
+  .card b { font-weight: 600; }
+  .card .amt { font-weight: 600; white-space: nowrap; }
+  .card .sub { grid-column: 1 / -1; color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
+  .card.bad { border-color: var(--neg); background: var(--neg-soft); }
+  .card.bad .sub { color: var(--neg); }
+  .card.good { border-color: var(--pos); background: var(--pos-soft); }
+  .card.good .sub { color: var(--pos); }
+  .card.changed { border-color: var(--warn); background: var(--warn-soft); }
+  .card.changed .sub { color: var(--warn); }
+  .card.followed { box-shadow: 0 0 0 2px var(--accent); }
+  @keyframes arrive { from { transform: translateY(5px); } to { transform: none; } }
+
+  /* Rows moving between stages */
+  .fly {
+    position: absolute; left: 0; top: 0; z-index: 3; pointer-events: none;
+    padding: 2px 8px; border-radius: 999px;
+    background: var(--accent); color: var(--accent-ink);
+    font-size: 11.5px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap;
+    box-shadow: var(--shadow); opacity: 0;
+    transition: transform .9s cubic-bezier(.5, 0, .2, 1), opacity .25s;
+  }
+
+  /* Bands under the map: schedule and tests */
+  .bands { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 14px; }
+  .band {
+    padding: 9px 12px; border: 2px dashed var(--line); border-radius: 12px;
+    color: var(--muted); font-size: 13px;
+  }
+  .band b { display: block; color: var(--ink); font-size: 13.5px; }
+  .band.active { border-style: solid; border-color: var(--accent); box-shadow: var(--shadow); background: var(--surface); }
+  .band.active.problem { border-color: var(--neg); }
+  .band.active.fix { border-color: var(--pos); }
+  .band code { display: block; margin-top: 4px; color: var(--ink); font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow-wrap: anywhere; }
+  .wrong.right { border-color: var(--pos); background: var(--pos-soft); }
+  .wrong.right b { color: var(--pos); }
+  .band .role { display: block; }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 14px 0 0; color: var(--muted); font-size: 12.5px; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .swatch { width: 18px; height: 12px; border-radius: 4px; border: 2px solid var(--line); }
+  .swatch.s-new { border-color: var(--accent); }
+  .swatch.s-ghost { border-style: dashed; }
+  .swatch.s-bad { border-color: var(--neg); background: var(--neg-soft); }
+  .swatch.s-changed { border-color: var(--warn); background: var(--warn-soft); }
+
+  /* Side panels */
+  .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; }
+  .panel h2 { margin: 0 0 6px; font-size: 19px; line-height: 1.25; text-wrap: balance; }
+  .kicker { margin: 0 0 6px; font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  .panel p { margin: 0; }
+  .panel.problem { border-color: var(--neg); }
+  .panel.problem .kicker { color: var(--neg); }
+  .panel.fix { border-color: var(--pos); }
+  .panel.fix .kicker { color: var(--pos); }
+  .word { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
+  .word dt { font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--accent); }
+  .word dd { margin: 2px 0 0; }
+  .word dd b { display: block; font-size: 16px; }
+  .word dd span { font-size: 13.5px; color: var(--muted); }
+  .follow h2 { font-size: 15px; }
+  .follow p { font-size: 14px; }
+  .wrong {
+    margin: 26px 0 0; padding: 14px 18px; border-radius: 12px;
+    border: 1px solid var(--neg); background: var(--neg-soft);
+  }
+  .wrong b { color: var(--neg); }
+  .wrong span { display: block; margin-top: 2px; color: var(--muted); font-size: 13.5px; }
+  .foot { margin: 22px 0 0; padding-top: 14px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; max-width: 86ch; }
+  kbd { padding: 0 5px; border: 1px solid var(--line); border-radius: 4px; background: var(--surface); font: 12px ui-monospace, Menlo, Consolas, monospace; }
+
+  @media (max-width: 1040px) {
+    .layout { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+    .side { position: static; order: -1; }
+  }
+  @media (max-width: 760px) {
+    .page { padding: 22px 16px 40px; }
+    h1 { font-size: 27px; }
+    .lane { grid-template-columns: minmax(0, 1fr); gap: 26px; }
+    .stage { min-height: 0; }
+    .stage + .stage::before { content: "\2193"; left: 18px; top: -23px; }
+    .cards { grid-template-columns: 1fr 1fr; }
+    .bands { grid-template-columns: 1fr; }
+    .pick { min-width: 0; flex: 1 1 140px; }
+    .clock { margin-left: 0; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+  <header>
+    <p class="eyebrow" id="eyebrow"></p>
+    <h1 id="title"></h1>
+    <p class="lede" id="lede"></p>
+  </header>
+
+  <section aria-label="Follow one order">
+    <p class="pick-label" id="pick-label">Follow one order through every stage</p>
+    <div class="picks" id="picks" role="group" aria-labelledby="pick-label"></div>
+  </section>
+
+  <div class="toolbar">
+    <div class="btns">
+      <button class="btn" id="back" type="button">Back</button>
+      <button class="btn primary" id="play" type="button">Play</button>
+      <button class="btn" id="next" type="button">Next</button>
+      <button class="btn" id="again" type="button">Run it again</button>
+      <button class="btn" id="restart" type="button">Restart</button>
+    </div>
+    <span class="progress-text" id="progress-text"></span>
+    <span class="clock" id="clock" title="The time on the order system's clock"></span>
+  </div>
+  <div class="bar" aria-hidden="true"><i id="bar"></i></div>
+
+  <main class="layout">
+    <div>
+      <div class="diagram" id="diagram">
+        <div class="lane" id="lane"></div>
+      </div>
+      <div class="bands">
+        <div class="band" id="band-schedule"><span class="role">Schedule</span><b></b><span></span><code id="band-now"></code></div>
+        <div class="band" id="band-tests"><span class="role">Tests</span><b></b><span></span></div>
+      </div>
+      <p class="legend" aria-label="Legend">
+        <span><i class="swatch s-new"></i> stage in use at this step</span>
+        <span><i class="swatch s-ghost"></i> not built yet</span>
+        <span><i class="swatch s-bad"></i> wrong</span>
+        <span><i class="swatch s-changed"></i> changed since the last run</span>
+      </p>
+    </div>
+
+    <aside class="side">
+      <section class="panel" id="detail" aria-label="Current step">
+        <p class="kicker" id="d-kicker"></p>
+        <h2 id="d-title"></h2>
+        <p id="d-text"></p>
+        <dl class="word">
+          <dt>The word</dt>
+          <dd><b id="w-term"></b><span id="w-meaning"></span></dd>
+        </dl>
+      </section>
+      <section class="panel follow" aria-label="The order you follow">
+        <p class="kicker">The order you follow</p>
+        <h2 id="f-title"></h2>
+        <p id="f-text"></p>
+      </section>
+    </aside>
+  </main>
+
+  <p class="wrong"><b>Still wrong at the end of this milestone.</b> <span id="wrong-text"></span></p>
+
+  <p class="foot">Use <kbd>←</kbd> and <kbd>→</kbd> to step, and <kbd>Space</kbd> to play or pause. Every number on this page was written by <code>daily_orders/flow_data.py</code> from a real run of this milestone's code, and a test checks that they still match. All data is fictional.</p>
+</div>
+
+<script id="page-data" type="application/json">
+{
+ "recap": {
+  "dbt": {
+   "tests": 31
+  },
+  "first": {
+   "rows": 226,
+   "calls": 10
+  },
+  "cron": {
+   "tests": 31,
+   "shown": "Mon 06-08"
+  },
+  "backfill": {
+   "days": 4,
+   "runs": 5,
+   "right": "equals the answer key"
+  },
+  "drill": {
+   "states": "running → up_for_retry → running → success",
+   "rows": 118,
+   "orders": 93,
+   "retries": 2,
+   "right": "equals the answer key"
+  },
+  "replay": {
+   "same": "identical",
+   "run": "2026-06-10_2"
+  },
+  "bad": {
+   "transform": "failed",
+   "publish": "upstream_failed",
+   "kept": "kept its last good numbers",
+   "after": "equals the answer key"
+  },
+  "runs": 7
+ },
+ "milestone": 5,
+ "of": 5,
+ "done": true,
+ "title": "On a schedule",
+ "lede": "The same pipeline, cut into tasks. Airflow runs them every morning, in the right order, and again when one fails. Watch it survive a bad morning.",
+ "stages": [
+  {
+   "id": "api",
+   "name": "Order system API",
+   "role": "Source",
+   "state": "given"
+  },
+  {
+   "id": "extract",
+   "name": "Extract",
+   "role": "Task · extract_and_load",
+   "state": "built",
+   "badge": "now a task: 3 retries"
+  },
+  {
+   "id": "raw",
+   "name": "Raw landing table",
+   "role": "Store · raw layer",
+   "state": "built",
+   "badge": "as before"
+  },
+  {
+   "id": "orders",
+   "name": "Clean orders table",
+   "role": "Task · transform_and_test",
+   "state": "built",
+   "badge": "now a task: no retry"
+  },
+  {
+   "id": "report",
+   "name": "Daily report",
+   "role": "Task · publish_report",
+   "state": "built",
+   "badge": "now a task"
+  }
+ ],
+ "schedule": {
+  "state": "new",
+  "text": "New. One Airflow DAG: four tasks, every day at 07:00."
+ },
+ "tests": {
+  "state": "built",
+  "text": "Built. 31 tests run on the tables in every run. A failed test stops the report."
+ },
+ "cases": [
+  {
+   "id": "1130",
+   "label": "Order 1130",
+   "hint": "refunded, then a bad status"
+  },
+  {
+   "id": "1244",
+   "label": "Order 1244",
+   "hint": "cancelled late"
+  },
+  {
+   "id": "1356",
+   "label": "Order 1356",
+   "hint": "deleted from the source"
+  }
+ ],
+ "steps": [
+  {
+   "id": "cron",
+   "active": "schedule",
+   "problem": true,
+   "clock": "Tue 06-09, 07:05",
+   "title": "Two steps, started by the clock",
+   "text": "A first idea: start the load at 07:00 and the transform at 07:05. On Tuesday the load is slow. At 07:05 the transform starts anyway, finds only Monday's rows, passes all 31 tests, and publishes the report of Mon 06-08. Nothing failed. The manager reads yesterday's numbers.",
+   "word": {
+    "term": "Schedule and cron",
+    "meaning": "A schedule starts a run at a time. Cron's five fields are the usual way to write one: 0 7 * * * is every day at 07:00."
+   },
+   "band": "cron:  0 7 * * *  extract-load      5 7 * * *  transform-test      (no step waits for another)",
+   "stages": {
+    "api": {
+     "count": "slow this morning",
+     "cards": []
+    },
+    "extract": {
+     "count": "still running at 07:05",
+     "cards": []
+    },
+    "raw": {
+     "count": "Tuesday's rows: not here yet",
+     "cards": []
+    },
+    "orders": {
+     "count": "31 tests passed",
+     "cards": []
+    },
+    "report": {
+     "count": "still the report of Mon 06-08",
+     "cards": [
+      {
+       "id": "Sun 06-07",
+       "amount": "$807.11",
+       "sub": "30 orders · equals the truth",
+       "tone": "changed"
+      },
+      {
+       "id": "Sat 06-06",
+       "amount": "$786.71",
+       "sub": "33 orders · equals the truth",
+       "tone": "changed"
+      }
+     ]
+    }
+   },
+   "moves": [],
+   "follow": {
+    "1130": "It is in Monday's rows. Its refund is in Tuesday's rows, which the early transform never saw.",
+    "1244": "Not placed yet.",
+    "1356": "Not placed yet."
+   }
+  },
+  {
+   "id": "dag",
+   "active": "schedule",
+   "fix": true,
+   "clock": "every day, 07:00",
+   "title": "The fix: tasks, and arrows between them",
+   "text": "The pipeline becomes four tasks in an Airflow DAG. An arrow means: this task needs that one to finish first. The transform no longer starts at a time. It starts when the load is done. Airflow adds order, timing, retries and a history. The work is the same program as before.",
+   "word": {
+    "term": "DAG",
+    "meaning": "Directed acyclic graph: the tasks of a job, and the arrows between them."
+   },
+   "band": "set_source_clock  →  extract_and_load  →  transform_and_test  →  publish_report",
+   "stages": {
+    "api": {
+     "count": "",
+     "cards": []
+    },
+    "extract": {
+     "count": "task: extract_and_load",
+     "cards": []
+    },
+    "raw": {
+     "count": "",
+     "cards": []
+    },
+    "orders": {
+     "count": "task: transform_and_test",
+     "cards": []
+    },
+    "report": {
+     "count": "task: publish_report",
+     "cards": []
+    }
+   },
+   "moves": [],
+   "follow": {
+    "1130": "Nothing about its data changes in this milestone. Only who starts the work.",
+    "1244": "Not placed yet.",
+    "1356": "Not placed yet."
+   }
+  },
+  {
+   "id": "interval",
+   "active": "schedule",
+   "clock": "Mon 06-08, 07:00",
+   "title": "A run is for one day, and happens the next morning",
+   "text": "This run is for the business day Sun 06-07: its logical date. Its data interval is Sunday 07:00 to Monday 07:00, and it starts when that interval ends. It lands 226 rows and passes 31 table tests. The tasks take the day from the run, never from the clock.",
+   "word": {
+    "term": "Data interval",
+    "meaning": "The slice of time a run covers. The logical date is its start: the day the run is for."
+   },
+   "band": "clock: success  →  extract: success  →  transform: success  →  publish: success",
+   "stages": {
+    "api": {
+     "count": "226 orders",
+     "cards": []
+    },
+    "extract": {
+     "count": "226 rows · 10 calls",
+     "cards": []
+    },
+    "raw": {
+     "count": "226 rows",
+     "cards": []
+    },
+    "orders": {
+     "count": "31 tests passed",
+     "cards": [
+      {
+       "id": 1130,
+       "amount": "$14.75",
+       "sub": "Fri 06-05 · Northgate · delivered",
+       "tone": "good"
+      },
+      {
+       "id": 1224,
+       "amount": "$70.18",
+       "sub": "Sun 06-07 · Northgate · placed",
+       "tone": "good"
+      }
+     ]
+    },
+    "report": {
+     "count": "morning of Mon 06-08",
+     "cards": [
+      {
+       "id": "Sun 06-07",
+       "amount": "$807.11",
+       "sub": "30 orders · equals the truth",
+       "tone": "good"
+      },
+      {
+       "id": "Sat 06-06",
+       "amount": "$786.71",
+       "sub": "33 orders · equals the truth",
+       "tone": "good"
+      }
+     ]
+    }
+   },
+   "moves": [
+    {
+     "from": "api",
+     "to": "extract"
+    },
+    {
+     "from": "extract",
+     "to": "raw"
+    },
+    {
+     "from": "raw",
+     "to": "orders"
+    },
+    {
+     "from": "orders",
+     "to": "report"
+    }
+   ],
+   "follow": {
+    "1130": "Loaded by the run for Sunday, before its refund.",
+    "1244": "Not placed yet. It is ordered on Monday evening.",
+    "1356": "Not placed yet."
+   }
+  },
+  {
+   "id": "backfill",
+   "active": "schedule",
+   "fix": true,
+   "clock": "any time later",
+   "title": "Four missed days, one command",
+   "text": "Nobody ran the pipeline from Monday to Thursday. One backfill command runs the 4 missed days, oldest first, one at a time. Each run does exactly what a scheduled run would have done. The report equals the answer key.",
+   "word": {
+    "term": "Backfill",
+    "meaning": "Running the job again for days in the past. One command for a range of days."
+   },
+   "band": "airflow backfill create --dag-id daily_orders --from-date 2026-06-08 --to-date 2026-06-12 --max-active-runs 1",
+   "stages": {
+    "api": {
+     "count": "",
+     "cards": []
+    },
+    "extract": {
+     "count": "5 runs, in order",
+     "cards": [
+      {
+       "id": "morning 06-08",
+       "amount": "226 rows",
+       "sub": "run 06-08_1",
+       "tone": ""
+      },
+      {
+       "id": "morning 06-09",
+       "amount": "102 rows",
+       "sub": "run 06-09_1",
+       "tone": ""
+      },
+      {
+       "id": "morning 06-10",
+       "amount": "93 rows",
+       "sub": "run 06-10_1",
+       "tone": ""
+      },
+      {
+       "id": "morning 06-11",
+       "amount": "120 rows",
+       "sub": "run 06-11_1",
+       "tone": ""
+      },
+      {
+       "id": "morning 06-12",
+       "amount": "103 rows",
+       "sub": "run 06-12_1",
+       "tone": ""
+      }
+     ]
+    },
+    "raw": {
+     "count": "644 rows",
+     "cards": []
+    },
+    "orders": {
+     "count": "347 orders",
+     "cards": [
+      {
+       "id": 1130,
+       "amount": "$8.97",
+       "sub": "Fri 06-05 · Northgate · delivered",
+       "tone": "good"
+      },
+      {
+       "id": 1244,
+       "amount": "$18.26",
+       "sub": "Mon 06-08 · Lakeshore · cancelled",
+       "tone": "good"
+      }
+     ]
+    },
+    "report": {
+     "count": "right",
+     "cards": [
+      {
+       "id": "Sun 06-07",
+       "amount": "success",
+       "sub": "started by manual",
+       "tone": "good"
+      },
+      {
+       "id": "Mon 06-08",
+       "amount": "success",
+       "sub": "started by backfill",
+       "tone": "good"
+      },
+      {
+       "id": "Tue 06-09",
+       "amount": "success",
+       "sub": "started by backfill",
+       "tone": "good"
+      },
+      {
+       "id": "Wed 06-10",
+       "amount": "success",
+       "sub": "started by backfill",
+       "tone": "good"
+      },
+      {
+       "id": "Thu 06-11",
+       "amount": "success",
+       "sub": "started by backfill",
+       "tone": "good"
+      }
+     ]
+    }
+   },
+   "moves": [
+    {
+     "from": "extract",
+     "to": "raw"
+    },
+    {
+     "from": "raw",
+     "to": "orders"
+    }
+   ],
+   "follow": {
+    "1130": "The run for Monday picks up its refund, and Friday's number goes down.",
+    "1244": "Loaded as 'out for delivery', then its late cancellation is caught by the lookback of the next run.",
+    "1356": "Not placed yet. It is ordered on Friday 12 June."
+   }
+  },
+  {
+   "id": "down",
+   "active": "extract",
+   "problem": true,
+   "clock": "Sat 06-13, 07:00",
+   "title": "The bad morning: the order system is down",
+   "text": "At 07:00 the order system answers every call with an error. Inside the task, the code tries five times and gives up. The task fails. Airflow sees that it has tries left, marks it up_for_retry, and waits 20 seconds. Nothing was landed, and the watermark did not move.",
+   "word": {
+    "term": "Retry",
+    "meaning": "Running a failed task again after a short wait. It is safe only because the task is idempotent."
+   },
+   "band": "clock: success  →  extract: up_for_retry  →  transform: waiting  →  publish: waiting",
+   "stages": {
+    "api": {
+     "count": "500, 500, 500, 500, 500",
+     "cards": []
+    },
+    "extract": {
+     "count": "try 1 failed · waiting 20 seconds",
+     "cards": [
+      {
+       "id": "state 1",
+       "amount": "running",
+       "sub": "extract_and_load",
+       "tone": ""
+      },
+      {
+       "id": "state 2",
+       "amount": "up_for_retry",
+       "sub": "extract_and_load",
+       "tone": "changed"
+      }
+     ]
+    },
+    "raw": {
+     "count": "nothing landed",
+     "cards": []
+    },
+    "orders": {
+     "count": "waiting",
+     "cards": []
+    },
+    "report": {
+     "count": "waiting",
+     "cards": []
+    }
+   },
+   "moves": [],
+   "follow": {
+    "1130": "Not affected.",
+    "1244": "Already cancelled, and right.",
+    "1356": "It is in the rows this run is trying to load."
+   }
+  },
+  {
+   "id": "recovered",
+   "active": "extract",
+   "fix": true,
+   "clock": "Sat 06-13, 07:01",
+   "title": "It tries again. Then a page arrives twice",
+   "text": "Airflow starts the task again. The order system is back, and then serves one page twice: 118 rows land for 93 orders. Staging keeps one row per order, 31 table tests pass, and the report equals the answer key. Nobody did anything.",
+   "word": {
+    "term": "Retry",
+    "meaning": "Running a failed task again after a short wait. It is safe only because the task is idempotent."
+   },
+   "band": "clock: success  →  extract: success  →  transform: success  →  publish: success",
+   "stages": {
+    "api": {
+     "count": "back, and one page twice",
+     "cards": []
+    },
+    "extract": {
+     "count": "118 rows · 2 retries in the code",
+     "cards": [
+      {
+       "id": "state 1",
+       "amount": "running",
+       "sub": "extract_and_load",
+       "tone": ""
+      },
+      {
+       "id": "state 2",
+       "amount": "up_for_retry",
+       "sub": "extract_and_load",
+       "tone": "changed"
+      },
+      {
+       "id": "state 3",
+       "amount": "running",
+       "sub": "extract_and_load",
+       "tone": ""
+      },
+      {
+       "id": "state 4",
+       "amount": "success",
+       "sub": "extract_and_load",
+       "tone": "good"
+      }
+     ]
+    },
+    "raw": {
+     "count": "118 rows · 93 orders",
+     "cards": []
+    },
+    "orders": {
+     "count": "31 tests passed",
+     "cards": [
+      {
+       "id": 1130,
+       "amount": "$8.97",
+       "sub": "Fri 06-05 · Northgate · delivered",
+       "tone": "good"
+      },
+      {
+       "id": 1244,
+       "amount": "$18.26",
+       "sub": "Mon 06-08 · Lakeshore · cancelled",
+       "tone": "good"
+      }
+     ]
+    },
+    "report": {
+     "count": "right",
+     "cards": [
+      {
+       "id": "Fri 06-12",
+       "amount": "$704.74",
+       "sub": "26 orders · equals the truth",
+       "tone": "good"
+      },
+      {
+       "id": "Thu 06-11",
+       "amount": "$762.24",
+       "sub": "30 orders · equals the truth",
+       "tone": "good"
+      }
+     ]
+    }
+   },
+   "moves": [
+    {
+     "from": "api",
+     "to": "extract"
+    },
+    {
+     "from": "extract",
+     "to": "raw"
+    },
+    {
+     "from": "raw",
+     "to": "orders"
+    },
+    {
+     "from": "orders",
+     "to": "report"
+    }
+   ],
+   "follow": {
+    "1130": "Not affected.",
+    "1244": "Already cancelled, and right.",
+    "1356": "Loaded, as a normal order of Friday."
+   }
+  },
+  {
+   "id": "replay",
+   "active": "schedule",
+   "rerun": true,
+   "fix": true,
+   "clock": "any time later",
+   "title": "Run a past day again: nothing changes",
+   "text": "Finance asks for Tue 06-09 again. A person clears that run, and Airflow runs its four tasks again. It is logged as run 2026-06-10_2. The orders and the report are identical to before. Every step is idempotent, so a replay is always safe.",
+   "word": {
+    "term": "Replay",
+    "meaning": "Running a finished day again. In Airflow: clear the run, and its tasks run again."
+   },
+   "band": "airflow tasks clear daily_orders -s 2026-06-09 -e 2026-06-10 -y",
+   "stages": {
+    "api": {
+     "count": "",
+     "cards": []
+    },
+    "extract": {
+     "count": "run 06-10_2",
+     "cards": []
+    },
+    "raw": {
+     "count": "",
+     "cards": []
+    },
+    "orders": {
+     "count": "unchanged",
+     "cards": [
+      {
+       "id": 1130,
+       "amount": "$8.97",
+       "sub": "Fri 06-05 · Northgate · delivered",
+       "tone": "good"
+      },
+      {
+       "id": 1244,
+       "amount": "$18.26",
+       "sub": "Mon 06-08 · Lakeshore · cancelled",
+       "tone": "good"
+      }
+     ]
+    },
+    "report": {
+     "count": "unchanged",
+     "cards": [
+      {
+       "id": "Fri 06-12",
+       "amount": "$704.74",
+       "sub": "26 orders · equals the truth",
+       "tone": "good"
+      },
+      {
+       "id": "Tue 06-09",
+       "amount": "$714.80",
+       "sub": "31 orders · equals the truth",
+       "tone": "good"
+      },
+      {
+       "id": "Mon 06-08",
+       "amount": "$573.49",
+       "sub": "24 orders · equals the truth",
+       "tone": "good"
+      }
+     ]
+    }
+   },
+   "moves": [
+    {
+     "from": "raw",
+     "to": "orders"
+    },
+    {
+     "from": "orders",
+     "to": "report"
+    }
+   ],
+   "follow": {
+    "1130": "Read again by the replay. One row, unchanged.",
+    "1244": "Unchanged.",
+    "1356": "Unchanged."
+   }
+  },
+  {
+   "id": "bad_data",
+   "active": "orders",
+   "problem": true,
+   "clock": "Sun 06-14, 07:00",
+   "title": "The data is wrong: no retry, and no report",
+   "text": "The order system is up, and sends order 1130 with a status nobody has seen. The load succeeds. The test task is failed, and it is not tried again: a test that failed on the data will fail again. The report task is upstream_failed. It never ran, and the report keeps its last good numbers.",
+   "word": {
+    "term": "Dependency",
+    "meaning": "A task whose upstream task failed never runs. Airflow marks it upstream_failed."
+   },
+   "band": "clock: success  →  extract: success  →  transform: failed  →  publish: upstream_failed",
+   "stages": {
+    "api": {
+     "count": "a bad row",
+     "cards": [
+      {
+       "id": 1130,
+       "amount": "bad",
+       "sub": "status: teleported",
+       "tone": "bad"
+      }
+     ]
+    },
+    "extract": {
+     "count": "success",
+     "cards": []
+    },
+    "raw": {
+     "count": "landed as received",
+     "cards": []
+    },
+    "orders": {
+     "count": "a table test FAILED",
+     "cards": [
+      {
+       "id": 1130,
+       "amount": "$8.97",
+       "sub": "Fri 06-05 · Northgate · teleported",
+       "tone": "bad"
+      }
+     ]
+    },
+    "report": {
+     "count": "upstream_failed: not published",
+     "cards": []
+    }
+   },
+   "moves": [
+    {
+     "from": "raw",
+     "to": "orders"
+    }
+   ],
+   "follow": {
+    "1130": "The source sends it with the status 'teleported'. This one row fails the test task.",
+    "1244": "Not affected.",
+    "1356": "Deleted from the source on Saturday. The delete is landed, but the report is not rebuilt in this failed run."
+   }
+  },
+  {
+   "id": "fixed",
+   "active": "report",
+   "fix": true,
+   "clock": "Sun 06-14, 09:00",
+   "title": "A person fixes the source, and runs the day again",
+   "text": "The bad row is removed at the source. The failed run is cleared, and Airflow runs it again. All four tasks succeed, and the report equals the answer key. It also drops the test order 1356, which was deleted from the source on Saturday.",
+   "word": {
+    "term": "Replay",
+    "meaning": "Running a finished day again. In Airflow: clear the run, and its tasks run again."
+   },
+   "band": "clock: success  →  extract: success  →  transform: success  →  publish: success",
+   "stages": {
+    "api": {
+     "count": "",
+     "cards": []
+    },
+    "extract": {
+     "count": "success",
+     "cards": []
+    },
+    "raw": {
+     "count": "",
+     "cards": []
+    },
+    "orders": {
+     "count": "all tests passed",
+     "cards": [
+      {
+       "id": 1130,
+       "amount": "$8.97",
+       "sub": "Fri 06-05 · Northgate · delivered",
+       "tone": "good"
+      },
+      {
+       "id": 1356,
+       "amount": "$14.24",
+       "sub": "Fri 06-12 · Northgate · marked deleted",
+       "tone": "good"
+      }
+     ]
+    },
+    "report": {
+     "count": "right",
+     "cards": [
+      {
+       "id": "Sat 06-13",
+       "amount": "$702.57",
+       "sub": "26 orders · equals the truth",
+       "tone": "good"
+      },
+      {
+       "id": "Fri 06-12",
+       "amount": "$690.50",
+       "sub": "25 orders · equals the truth",
+       "tone": "good"
+      }
+     ]
+    }
+   },
+   "moves": [
+    {
+     "from": "raw",
+     "to": "orders"
+    },
+    {
+     "from": "orders",
+     "to": "report"
+    }
+   ],
+   "follow": {
+    "1130": "Back to 'delivered'. The replay passes.",
+    "1244": "Unchanged.",
+    "1356": "The replay passes, and it is marked as deleted. Friday loses one order."
+   }
+  },
+  {
+   "id": "catchup",
+   "active": "schedule",
+   "clock": "after an outage",
+   "title": "Missed days do not run by themselves",
+   "text": "This DAG has catchup switched off. When the scheduler comes back after days away, it starts nothing old. A person decides when a pile of old runs hits the order system, and asks for a backfill. Every run so far is listed, with the day it was for: 7 runs.",
+   "word": {
+    "term": "Catchup",
+    "meaning": "The setting that makes a scheduler run missed days by itself. Here it is off: a person asks for a backfill."
+   },
+   "band": "catchup=False   ·   max_active_runs=1   ·   one morning at a time",
+   "stages": {
+    "api": {
+     "count": "",
+     "cards": []
+    },
+    "extract": {
+     "count": "",
+     "cards": []
+    },
+    "raw": {
+     "count": "",
+     "cards": []
+    },
+    "orders": {
+     "count": "",
+     "cards": []
+    },
+    "report": {
+     "count": "7 runs, all listed",
+     "cards": [
+      {
+       "id": "Sun 06-07",
+       "amount": "success",
+       "sub": "started by manual",
+       "tone": "good"
+      },
+      {
+       "id": "Mon 06-08",
+       "amount": "success",
+       "sub": "started by backfill",
+       "tone": "good"
+      },
+      {
+       "id": "Tue 06-09",
+       "amount": "success",
+       "sub": "started by backfill",
+       "tone": "good"
+      },
+      {
+       "id": "Wed 06-10",
+       "amount": "success",
+       "sub": "started by backfill",
+       "tone": "good"
+      },
+      {
+       "id": "Thu 06-11",
+       "amount": "success",
+       "sub": "started by backfill",
+       "tone": "good"
+      },
+      {
+       "id": "Fri 06-12",
+       "amount": "success",
+       "sub": "started by manual",
+       "tone": "good"
+      },
+      {
+       "id": "Sat 06-13",
+       "amount": "success",
+       "sub": "started by manual",
+       "tone": "good"
+      }
+     ]
+    }
+   },
+   "moves": [],
+   "follow": {
+    "1130": "One row, right.",
+    "1244": "One row, cancelled.",
+    "1356": "Kept, marked, and not counted."
+   }
+  },
+  {
+   "id": "micro",
+   "active": "schedule",
+   "clock": "a lab",
+   "title": "The same tasks, every five minutes",
+   "text": "A second DAG runs the same pipeline as a micro-batch: every five minutes, not every day. One line of the schedule changed. Each run is still a normal batch run, with the same tests. Below about a minute, the time one run takes is most of the wait, and a stream becomes the better tool. Arden's report is read once a morning, so it stays daily.",
+   "word": {
+    "term": "Micro-batch",
+    "meaning": "Batch with a very small slice. The same tasks, a different schedule."
+   },
+   "band": "orders_every_five_minutes:   */5 * * * *   (a lab, switched off by default)",
+   "stages": {
+    "api": {
+     "count": "",
+     "cards": []
+    },
+    "extract": {
+     "count": "the same tasks",
+     "cards": []
+    },
+    "raw": {
+     "count": "",
+     "cards": []
+    },
+    "orders": {
+     "count": "the same tests",
+     "cards": []
+    },
+    "report": {
+     "count": "",
+     "cards": []
+    }
+   },
+   "moves": [],
+   "follow": {
+    "1130": "A micro-batch would have picked up its refund within five minutes, not the next morning.",
+    "1244": "Its cancellation reached the API twelve hours late. No schedule can load what the source has not said yet.",
+    "1356": "Kept, marked, and not counted."
+   }
+  },
+  {
+   "id": "done",
+   "active": "schedule",
+   "fix": true,
+   "clock": "every day, 07:00",
+   "title": "Nothing is still wrong",
+   "text": "The pipeline reads only what changed, lands it raw, keeps one row per order, tests its tables, and runs itself every morning. It survived a bad morning with nobody helping. A real company would add alerts, a quality gate and a dashboard. Those belong to other projects of this series.",
+   "word": {
+    "term": "Orchestration",
+    "meaning": "Running the steps of a pipeline in the right order, at the right time, and watching them."
+   },
+   "band": "set_source_clock  →  extract_and_load  →  transform_and_test  →  publish_report      every day at 07:00",
+   "stages": {
+    "api": {
+     "count": "the source",
+     "cards": []
+    },
+    "extract": {
+     "count": "incremental · retries",
+     "cards": []
+    },
+    "raw": {
+     "count": "append, as received",
+     "cards": []
+    },
+    "orders": {
+     "count": "one row per order · tested",
+     "cards": [
+      {
+       "id": 1130,
+       "amount": "$8.97",
+       "sub": "Fri 06-05 · Northgate · delivered",
+       "tone": "good"
+      },
+      {
+       "id": 1244,
+       "amount": "$18.26",
+       "sub": "Mon 06-08 · Lakeshore · cancelled",
+       "tone": "good"
+      },
+      {
+       "id": 1356,
+       "amount": "$14.24",
+       "sub": "Fri 06-12 · Northgate · marked deleted",
+       "tone": "good"
+      }
+     ]
+    },
+    "report": {
+     "count": "right, every morning",
+     "cards": [
+      {
+       "id": "Sat 06-13",
+       "amount": "$702.57",
+       "sub": "26 orders · equals the truth",
+       "tone": "good"
+      },
+      {
+       "id": "Fri 06-12",
+       "amount": "$690.50",
+       "sub": "25 orders · equals the truth",
+       "tone": "good"
+      },
+      {
+       "id": "Mon 06-08",
+       "amount": "$573.49",
+       "sub": "24 orders · equals the truth",
+       "tone": "good"
+      }
+     ]
+    }
+   },
+   "moves": [
+    {
+     "from": "api",
+     "to": "extract"
+    },
+    {
+     "from": "extract",
+     "to": "raw"
+    },
+    {
+     "from": "raw",
+     "to": "orders"
+    },
+    {
+     "from": "orders",
+     "to": "report"
+    }
+   ],
+   "follow": {
+    "1130": "One row, right, on every morning.",
+    "1244": "One row, cancelled, and right.",
+    "1356": "Kept, marked, and not counted."
+   }
+  }
+ ],
+ "still_wrong": "Nothing. Every 'still wrong' line of this project is closed.",
+ "next": "A real company would add alerts, a quality gate and a dashboard. Those belong to other projects of the series."
+}
+</script>
+<script>
+(function () {
+  'use strict';
+
+  var DATA = JSON.parse(document.getElementById('page-data').textContent);
+  var STEP_MS = 7000;
+  var $ = function (id) { return document.getElementById(id); };
+  var reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var state = { step: 0, follow: DATA.cases[0].id, playing: false };
+  var timer = null, stageEls = {};
+
+  function el(tag, cls, text) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text != null) e.textContent = text;
+    return e;
+  }
+
+  // ---- Build the page once ---------------------------------------------------
+
+  $('eyebrow').textContent = 'Milestone ' + DATA.milestone + ' of ' + DATA.of + ' · the whole pipeline';
+  $('title').textContent = DATA.title;
+  $('lede').textContent = DATA.lede;
+  $('wrong-text').textContent = DATA.still_wrong + ' ' + (DATA.done ? '' : 'Next: ') + DATA.next;
+  if (DATA.done) {
+    document.querySelector('.wrong').classList.add('right');
+    document.querySelector('.wrong b').textContent = 'Nothing is still wrong at the end of this milestone.';
+  }
+
+  var BADGES = { given: 'the source', 'new': 'new', built: 'built', not_yet: 'not yet', by_hand: 'by hand' };
+
+  DATA.stages.forEach(function (s) {
+    var ghost = s.state === 'not_yet';
+    var box = el('section', 'stage' + (ghost ? ' ghost' : ''));
+    box.setAttribute('aria-label', s.name);
+    box.appendChild(el('span', 'role', s.role));
+    box.appendChild(el('span', 'name', s.name));
+    box.appendChild(el('span', 'badge' + (s.state === 'new' ? ' new' : ''), s.badge || BADGES[s.state]));
+    var count = el('div', 'count'), cards = el('div', 'cards');
+    if (ghost) box.appendChild(el('p', 'ghost-note', s.note));
+    else { box.appendChild(count); box.appendChild(cards); }
+    $('lane').appendChild(box);
+    stageEls[s.id] = { box: box, count: count, cards: cards, ghost: ghost, name: s.name };
+  });
+
+  [['band-schedule', DATA.schedule], ['band-tests', DATA.tests]].forEach(function (pair) {
+    var band = $(pair[0]);
+    band.querySelector('b').textContent = BADGES[pair[1].state];
+    band.querySelector('span:not(.role)').textContent = pair[1].text;
+    if (pair[1].state === 'built' || pair[1].state === 'new') band.style.borderStyle = 'solid';
+  });
+
+  DATA.cases.forEach(function (c) {
+    var b = el('button', 'pick');
+    b.type = 'button';
+    b.dataset.id = c.id;
+    b.appendChild(el('b', null, c.label));
+    b.appendChild(el('small', null, c.hint));
+    b.addEventListener('click', function () { state.follow = c.id; render(false); });
+    $('picks').appendChild(b);
+  });
+
+  // ---- Rendering -------------------------------------------------------------
+
+  function renderCards(target, cards) {
+    target.textContent = '';
+    cards.forEach(function (c) {
+      var card = el('div', 'card' + (c.tone ? ' ' + c.tone : '') + (String(c.id) === state.follow ? ' followed' : ''));
+      card.appendChild(el('b', null, typeof c.id === 'number' ? '#' + c.id : c.id));
+      card.appendChild(el('span', 'amt', c.amount));
+      card.appendChild(el('span', 'sub', c.sub));
+      target.appendChild(card);
+    });
+  }
+
+  function fly(step) {
+    if (reduceMotion || !step.moves.length) return;
+    var diagram = $('diagram'), base = diagram.getBoundingClientRect();
+    step.moves.forEach(function (move, m) {
+      var from = stageEls[move.from].box.getBoundingClientRect();
+      var to = stageEls[move.to].box.getBoundingClientRect();
+      var cards = (step.stages[move.to] || {}).cards || [];
+      var ids = cards.filter(function (c) { return typeof c.id === 'number'; }).map(function (c) { return '#' + c.id; });
+      if (!ids.length) ids = ['rows', 'rows', 'rows'];
+      ids.slice(0, 6).forEach(function (label, i) {
+        var chip = el('span', 'fly', label);
+        var x0 = from.left - base.left + from.width / 2 - 24, y0 = from.top - base.top + 90 + i * 22;
+        var x1 = to.left - base.left + to.width / 2 - 24, y1 = to.top - base.top + 90 + i * 22;
+        chip.style.transform = 'translate(' + x0 + 'px,' + y0 + 'px)';
+        diagram.appendChild(chip);
+        setTimeout(function () {
+          chip.style.opacity = '1';
+          chip.style.transform = 'translate(' + x1 + 'px,' + y1 + 'px)';
+        }, 60 + m * 500 + i * 90);
+        setTimeout(function () { chip.style.opacity = '0'; }, 1000 + m * 500 + i * 90);
+        setTimeout(function () { chip.remove(); }, 1500 + m * 500 + i * 90);
+      });
+    });
+  }
+
+  function render(animate) {
+    var step = DATA.steps[state.step], n = DATA.steps.length;
+    var mood = step.problem ? 'problem' : (step.fix ? 'fix' : '');
+
+    DATA.stages.forEach(function (s) {
+      var parts = stageEls[s.id];
+      parts.box.classList.toggle('active', s.id === step.active);
+      parts.box.classList.toggle('problem', s.id === step.active && !!step.problem);
+      parts.box.classList.toggle('fix', s.id === step.active && !!step.fix);
+      if (parts.ghost) return;
+      var now = step.stages[s.id] || { count: '', cards: [] };
+      parts.count.textContent = now.count;
+      renderCards(parts.cards, now.cards);
+    });
+
+    var band = $('band-schedule'), onBand = step.active === 'schedule';
+    band.className = 'band' + (onBand ? ' active' + (mood ? ' ' + mood : '') : '');
+    $('band-now').textContent = step.band || '';
+    $('detail').className = 'panel' + (mood ? ' ' + mood : '');
+    $('d-kicker').textContent = (step.problem ? 'The problem · ' : step.fix ? 'The fix · ' : '') +
+      'Step ' + (state.step + 1) + ' of ' + n + ' · ' + (stageEls[step.active] ? stageEls[step.active].name : 'Schedule');
+    $('d-title').textContent = step.title;
+    $('d-text').textContent = step.text;
+    $('w-term').textContent = step.word.term;
+    $('w-meaning').textContent = step.word.meaning;
+
+    var chosen = DATA.cases.filter(function (c) { return c.id === state.follow; })[0];
+    $('f-title').textContent = chosen.label + ': ' + chosen.hint;
+    $('f-text').textContent = step.follow[state.follow];
+    Array.prototype.forEach.call($('picks').children, function (b) {
+      b.setAttribute('aria-pressed', String(b.dataset.id === state.follow));
+    });
+
+    $('clock').textContent = step.clock;
+    $('progress-text').textContent = 'Step ' + (state.step + 1) + ' of ' + n;
+    $('bar').style.width = ((state.step + 1) / n * 100) + '%';
+    $('back').disabled = state.step === 0;
+    $('next').disabled = state.step === n - 1;
+    $('play').textContent = state.playing ? 'Pause' : (state.step === n - 1 ? 'Replay' : 'Play');
+    $('detail').setAttribute('aria-live', state.playing ? 'off' : 'polite');
+    if (animate) fly(step);
+  }
+
+  // ---- Actions ---------------------------------------------------------------
+
+  function go(index) { state.step = index; render(true); schedule(); }
+  function move(delta) {
+    var index = state.step + delta;
+    if (index < 0 || index >= DATA.steps.length) return false;
+    go(index);
+    return true;
+  }
+  function schedule() {
+    clearTimeout(timer);
+    if (!state.playing) return;
+    timer = setTimeout(function () {
+      if (!move(1)) { state.playing = false; render(false); }
+    }, STEP_MS);
+  }
+  function pause() { state.playing = false; clearTimeout(timer); }
+  function togglePlay() {
+    if (state.playing) { pause(); render(false); return; }
+    state.playing = true;
+    if (state.step === DATA.steps.length - 1) go(0); else { render(false); schedule(); }
+  }
+
+  $('back').addEventListener('click', function () { pause(); move(-1); render(false); });
+  $('next').addEventListener('click', function () { pause(); move(1); render(false); });
+  $('restart').addEventListener('click', function () { pause(); go(0); });
+  $('play').addEventListener('click', togglePlay);
+  $('again').addEventListener('click', function () {
+    // Jump to the step that runs the same morning a second time.
+    var index = DATA.steps.findIndex(function (s) { return s.rerun; });
+    pause();
+    go(index === -1 ? 0 : index);
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.key === 'ArrowRight') { pause(); move(1); render(false); }
+    if (e.key === 'ArrowLeft') { pause(); move(-1); render(false); }
+    if (e.key === ' ' && !e.target.closest('button')) { e.preventDefault(); togglePlay(); }
+  });
+
+  // A link can open the page at one step: milestone_5_flow.html#step=8&follow=1130
+  (location.hash.slice(1).split('&')).forEach(function (part) {
+    var pair = part.split('=');
+    if (pair[0] === 'step' && DATA.steps[pair[1] - 1]) state.step = pair[1] - 1;
+    if (pair[0] === 'follow' && DATA.cases.some(function (c) { return c.id === pair[1]; })) state.follow = pair[1];
+  });
+
+  render(false);
+})();
+</script>
+</body>
+</html>

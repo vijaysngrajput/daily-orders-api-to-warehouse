@@ -1,0 +1,16 @@
+version: 2
+
+models:
+  - name: daily_orders
+    description: The daily report. One row per business day, per city.
+    tests:
+      - one_row_per_day_and_city
+    columns:
+      - name: order_date
+        tests: [not_null]
+      - name: city
+        tests: [not_null]
+      - name: orders
+        tests: [not_null]
+      - name: revenue_cents
+        tests: [not_null]

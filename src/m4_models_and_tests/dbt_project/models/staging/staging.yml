@@ -1,0 +1,16 @@
+version: 2
+
+models:
+  - name: stg_orders
+    description: The raw orders as typed columns, one row per order (its newest version).
+    columns:
+      - name: order_id
+        description: The key of an order.
+        tests: [unique, not_null]
+  - name: stg_order_items
+    description: One row per item line of the newest version of each order.
+  - name: stg_order_deletes
+    description: Orders deleted from the source, from the change feed.
+    columns:
+      - name: order_id
+        tests: [unique, not_null]

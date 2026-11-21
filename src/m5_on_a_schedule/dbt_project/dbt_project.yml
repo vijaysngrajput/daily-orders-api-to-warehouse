@@ -1,0 +1,36 @@
+# The dbt project: every transformation of the pipeline, as SQL models.
+# The project is called `arden`. (A model is called daily_orders; the two names must differ,
+# or `--select daily_orders` would select the whole project.)
+name: arden
+version: "1.0.0"
+profile: arden
+
+model-paths: ["models"]
+seed-paths: ["seeds"]
+test-paths: ["tests"]
+macro-paths: ["macros"]
+target-path: "target"
+clean-targets: ["target", "dbt_packages"]
+
+vars:
+  business_time_zone: "America/Chicago"
+  reprocess_days: 7          # the report rebuilds this many days before its newest day
+
+models:
+  arden:
+    staging:
+      +schema: staging       # cleaned copies of the raw tables: views, always up to date
+      +materialized: view
+    core:
+      +schema: core          # one row per real thing: an order, an item
+      +materialized: table
+    marts:
+      +schema: marts         # what people read: the daily report
+      +materialized: table
+
+seeds:
+  arden:
+    +schema: core
+
+flags:
+  send_anonymous_usage_stats: false

@@ -100,3 +100,80 @@ def test_a_deleted_order_is_gone():
     assert api.get(f"/orders/{p8}").json()["customer_id"] == 9999
     api.post("/admin/clock", json={"morning": "2026-06-14"})
     assert api.get(f"/orders/{p8}").status_code == 404
+
+
+def test_a_planned_500_fails_then_the_api_recovers():
+    api = client()
+    api.post("/admin/faults", json={"kind": "error_500", "count": 2})
+    assert [api.get("/orders").status_code for _ in range(3)] == [500, 500, 200]
+    assert api.post("/admin/faults", json={"kind": "nonsense"}).status_code == 400
+
+
+def test_a_planned_rate_limit_says_how_long_to_wait():
+    api = client()
+    api.post("/admin/faults", json={"kind": "rate_limit", "count": 1})
+    refused = api.get("/orders")
+    assert refused.status_code == 429 and refused.headers["Retry-After"] == "1"
+    assert api.get("/orders").status_code == 200
+
+
+def test_a_repeated_page_gives_the_same_orders_twice():
+    api = client()
+    api.post("/admin/clock", json={"morning": "2026-06-08"})
+    api.post("/admin/faults", json={"kind": "repeat_page", "count": 1})
+    rows, calls = read_all(api)
+    ids = [o["order_id"] for o in rows]
+    assert calls == 11 and len(ids) == 226 + 25 and len(set(ids)) == 226
+    assert ids[25:50] == ids[50:75]  # page 2 arrived twice
+
+
+def test_the_planted_repeated_page_is_in_the_run_of_june_11():
+    api = client()
+    api.post("/admin/clock", json={"morning": "2026-06-11"})
+    rows, calls = read_all(api, updated_since="2026-06-10T12:00:00Z")
+    ids = [o["order_id"] for o in rows]
+    assert calls == 3 and len(ids) - len(set(ids)) == len(ids[25:]) // 2 > 0
+    rows_again, calls_again = read_all(api, updated_since="2026-06-10T12:00:00Z")
+    assert calls_again == 2 and len(rows_again) == len(set(ids))  # only once per morning
+
+
+def test_the_change_feed_shows_every_change_in_order_even_a_delete():
+    api = client()
+    api.post("/admin/clock", json={"morning": "2026-06-14"})
+    changes, pos = [], 0
+    while True:
+        body = api.get("/changes", params={"after_pos": pos, "limit": 500}).json()
+        changes += body["data"]
+        pos = body["last_pos"]
+        if not body["more"]:
+            break
+    assert [c["pos"] for c in changes] == list(range(1, len(changes) + 1))
+    deletes = [c for c in changes if c["op"] == "d"]
+    assert len(deletes) == 1 and deletes[0]["order_id"] == api.app.state.world.planted["P8"]
+    assert deletes[0]["after"] is None and deletes[0]["before"]["total_cents"] == 1424
+    assert {c["op"] for c in changes} == {"c", "u", "d"}
+
+
+def test_a_webhook_pushes_each_change_once_and_never_retries():
+    received, down = [], {"is": False}
+
+    def post(url, body):
+        if down["is"]:
+            raise ConnectionError("the receiver is down")
+        received.append(body)
+
+    api = TestClient(create_app(timer=FakeTimer(), post=post))
+    api.post("/admin/clock", json={"morning": "2026-06-08"})
+    api.post("/webhooks", json={"url": "http://receiver/hook"})
+    pushed = api.post("/admin/clock", json={"advance_days": 1}).json()["webhooks"]
+    assert pushed == {"sent": len(received), "failed": 0} and len(received) > 50
+    assert [r["pos"] for r in received] == sorted(r["pos"] for r in received)
+    down["is"] = True
+    lost = api.post("/admin/clock", json={"advance_days": 1}).json()["webhooks"]
+    assert lost["sent"] == 0 and lost["failed"] > 50
+    down["is"] = False
+    later = api.post("/admin/clock", json={"advance_days": 1}).json()["webhooks"]
+    assert later["failed"] == 0  # the lost changes are never sent again
+    assert not any(
+        "2026-06-09T12" < r["changed_at"] < "2026-06-10T12" for r in received[-later["sent"] :]
+    )

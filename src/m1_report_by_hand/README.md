@@ -58,6 +58,10 @@ Then start the order system and leave it running:
 uv run python -m order_system
 ```
 
+## Shut it down
+
+This milestone starts one thing: the order system. Stop it with **Ctrl+C** in its terminal. Nothing runs in Docker.
+
 ## The lab
 
 Open the notebooks in VS Code, choose the project's `.venv` as the kernel, and run them in order. The order system must be running.

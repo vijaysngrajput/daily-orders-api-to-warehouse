@@ -1,0 +1,659 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arden: the live pipeline</title>
+<style>
+  :root {
+    color-scheme: light;
+    --bg: #f6f4ef;
+    --surface: #fffdf9;
+    --ink: #1d2327;
+    --muted: #5c6670;
+    --line: #d9d4c8;
+    --accent: #0f6b5c;
+    --accent-ink: #ffffff;
+    --accent-soft: #dcefe9;
+    --neg: #a23b2a;
+    --neg-soft: #f6e1dc;
+    --pos: #1f6f43;
+    --pos-soft: #dff0e5;
+    --warn: #8a5a00;
+    --warn-soft: #f7ebcf;
+    --tag-bg: #ecebe4;
+    --shadow: 0 1px 2px rgba(29, 35, 39, .06), 0 6px 18px rgba(29, 35, 39, .06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --bg: #14181a;
+      --surface: #1c2226;
+      --ink: #e8e6e1;
+      --muted: #9aa4ab;
+      --line: #2e373c;
+      --accent: #5fc5b0;
+      --accent-ink: #0d1f1c;
+      --accent-soft: #1d3a35;
+      --neg: #e58a78;
+      --neg-soft: #3a2420;
+      --pos: #7fd0a0;
+      --pos-soft: #1d3527;
+      --warn: #e2b85c;
+      --warn-soft: #3a3019;
+      --tag-bg: #262e33;
+      --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 6px 18px rgba(0, 0, 0, .25);
+    }
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  .page { max-width: 1240px; margin: 0 auto; padding: 32px 24px 56px; }
+
+  .eyebrow {
+    margin: 0 0 6px;
+    font-size: 12px; font-weight: 600; letter-spacing: .09em; text-transform: uppercase;
+    color: var(--accent);
+  }
+  h1 {
+    margin: 0 0 8px;
+    font: 600 34px/1.15 "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    text-wrap: balance;
+  }
+  .lede { margin: 0 0 22px; max-width: 68ch; color: var(--muted); font-size: 16px; }
+
+  /* Follow one order */
+  .pick-label { margin: 0 0 8px; font-size: 13px; font-weight: 600; }
+  .picks { display: flex; flex-wrap: wrap; gap: 8px; }
+  .pick {
+    display: flex; flex-direction: column; align-items: flex-start;
+    padding: 8px 14px; min-width: 150px;
+    font: inherit; color: var(--ink); text-align: left;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 10px; cursor: pointer;
+    transition: border-color .2s, background .2s;
+  }
+  .pick:hover { border-color: var(--accent); }
+  .pick b { font-weight: 600; font-variant-numeric: tabular-nums; }
+  .pick small { color: var(--muted); font-size: 12px; }
+  .pick[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  .pick[aria-pressed="true"] small { color: inherit; opacity: .85; }
+
+  /* Playback toolbar */
+  .toolbar {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px;
+    margin: 20px 0 8px; padding-top: 16px; border-top: 1px solid var(--line);
+  }
+  .btns { display: flex; flex-wrap: wrap; gap: 6px; }
+  .btn {
+    padding: 7px 14px; font: inherit; font-weight: 500; color: var(--ink);
+    background: var(--surface); border: 1px solid var(--line); border-radius: 8px; cursor: pointer;
+  }
+  .btn:hover:not(:disabled) { border-color: var(--accent); }
+  .btn:disabled { opacity: .45; cursor: default; }
+  .btn.primary { min-width: 76px; background: var(--ink); color: var(--bg); border-color: var(--ink); }
+  .progress-text { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+  .clock {
+    margin-left: auto; padding: 4px 10px; border-radius: 999px;
+    background: var(--tag-bg); font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums;
+  }
+  .bar { height: 3px; background: var(--line); border-radius: 2px; overflow: hidden; margin-bottom: 20px; }
+  .bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .5s ease; }
+  :is(.pick, .btn, .stage):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* Layout */
+  .layout { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 26px; align-items: start; }
+  .side { position: sticky; top: 16px; display: grid; gap: 14px; }
+
+  /* The pipeline map */
+  .diagram { position: relative; }
+  .lane { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 22px; align-items: stretch; }
+  .stage {
+    position: relative; display: flex; flex-direction: column; min-height: 330px;
+    padding: 10px; text-align: left; font: inherit; color: var(--ink);
+    background: var(--surface); border: 2px solid var(--line); border-radius: 12px;
+    transition: border-color .3s, box-shadow .3s, background .3s;
+  }
+  .stage + .stage::before { /* arrow from the stage before */
+    content: "\2192"; position: absolute; left: -19px; top: 20px;
+    color: var(--muted); font-size: 16px; line-height: 1;
+  }
+  .stage.ghost { border-style: dashed; background: transparent; color: var(--muted); }
+  .stage.active { border-color: var(--accent); box-shadow: var(--shadow); }
+  .stage.active.problem { border-color: var(--neg); }
+  .stage.active.fix { border-color: var(--pos); }
+  .role { font-size: 10.5px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+  .name { margin: 1px 0 6px; font-size: 14.5px; font-weight: 600; line-height: 1.25; }
+  .badge {
+    align-self: flex-start; padding: 1px 7px; border-radius: 999px;
+    font-size: 11px; font-weight: 600; background: var(--tag-bg); color: var(--muted);
+  }
+  .badge.new { background: var(--accent-soft); color: var(--accent); }
+  .count {
+    margin: 8px 0 6px; min-height: 20px;
+    font-size: 12.5px; font-weight: 600; font-variant-numeric: tabular-nums;
+  }
+  .stage.active.problem .count { color: var(--neg); }
+  .stage.active.fix .count { color: var(--pos); }
+  .ghost-note { margin: 8px 0 0; font-size: 12.5px; line-height: 1.4; }
+  .cards { display: grid; gap: 5px; align-content: start; }
+  .card {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0 6px;
+    padding: 5px 7px; border: 1px solid var(--line); border-radius: 7px; background: var(--bg);
+    font-size: 12px; line-height: 1.3; font-variant-numeric: tabular-nums;
+    animation: arrive .45s ease both;
+  }
+  .card b { font-weight: 600; }
+  .card .amt { font-weight: 600; white-space: nowrap; }
+  .card .sub { grid-column: 1 / -1; color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
+  .card.bad { border-color: var(--neg); background: var(--neg-soft); }
+  .card.bad .sub { color: var(--neg); }
+  .card.good { border-color: var(--pos); background: var(--pos-soft); }
+  .card.good .sub { color: var(--pos); }
+  .card.changed { border-color: var(--warn); background: var(--warn-soft); }
+  .card.changed .sub { color: var(--warn); }
+  .card.followed { box-shadow: 0 0 0 2px var(--accent); }
+  @keyframes arrive { from { transform: translateY(5px); } to { transform: none; } }
+
+  /* Rows moving between stages */
+  .fly {
+    position: absolute; left: 0; top: 0; z-index: 3; pointer-events: none;
+    padding: 2px 8px; border-radius: 999px;
+    background: var(--accent); color: var(--accent-ink);
+    font-size: 11.5px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap;
+    box-shadow: var(--shadow); opacity: 0;
+    transition: transform .9s cubic-bezier(.5, 0, .2, 1), opacity .25s;
+  }
+
+  /* Bands under the map: schedule and tests */
+  .bands { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 14px; }
+  .band {
+    padding: 9px 12px; border: 2px dashed var(--line); border-radius: 12px;
+    color: var(--muted); font-size: 13px;
+  }
+  .band b { display: block; color: var(--ink); font-size: 13.5px; }
+  .band .role { display: block; }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 14px 0 0; color: var(--muted); font-size: 12.5px; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .swatch { width: 18px; height: 12px; border-radius: 4px; border: 2px solid var(--line); }
+  .swatch.s-new { border-color: var(--accent); }
+  .swatch.s-ghost { border-style: dashed; }
+  .swatch.s-bad { border-color: var(--neg); background: var(--neg-soft); }
+  .swatch.s-changed { border-color: var(--warn); background: var(--warn-soft); }
+
+  /* Side panels */
+  .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; }
+  .panel h2 { margin: 0 0 6px; font-size: 19px; line-height: 1.25; text-wrap: balance; }
+  .kicker { margin: 0 0 6px; font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  .panel p { margin: 0; }
+  .panel.problem { border-color: var(--neg); }
+  .panel.problem .kicker { color: var(--neg); }
+  .panel.fix { border-color: var(--pos); }
+  .panel.fix .kicker { color: var(--pos); }
+  .word { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
+  .word dt { font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--accent); }
+  .word dd { margin: 2px 0 0; }
+  .word dd b { display: block; font-size: 16px; }
+  .word dd span { font-size: 13.5px; color: var(--muted); }
+  .follow h2 { font-size: 15px; }
+  .follow p { font-size: 14px; }
+  .wrong {
+    margin: 26px 0 0; padding: 14px 18px; border-radius: 12px;
+    border: 1px solid var(--neg); background: var(--neg-soft);
+  }
+  .wrong b { color: var(--neg); }
+  .wrong span { display: block; margin-top: 2px; color: var(--muted); font-size: 13.5px; }
+  .foot { margin: 22px 0 0; padding-top: 14px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; max-width: 86ch; }
+  kbd { padding: 0 5px; border: 1px solid var(--line); border-radius: 4px; background: var(--surface); font: 12px ui-monospace, Menlo, Consolas, monospace; }
+
+  @media (max-width: 1040px) {
+    .layout { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+    .side { position: static; order: -1; }
+  }
+  @media (max-width: 760px) {
+    .page { padding: 22px 16px 40px; }
+    h1 { font-size: 27px; }
+    .lane { grid-template-columns: minmax(0, 1fr); gap: 26px; }
+    .stage { min-height: 0; }
+    .stage + .stage::before { content: "\2193"; left: 18px; top: -23px; }
+    .cards { grid-template-columns: 1fr 1fr; }
+    .bands { grid-template-columns: 1fr; }
+    .pick { min-width: 0; flex: 1 1 140px; }
+    .clock { margin-left: 0; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+    .hint { outline: 3px solid var(--accent); outline-offset: 3px; }
+  }
+
+  /* The live page */
+  .days { display: flex; flex-wrap: wrap; gap: 6px; }
+  .day { padding: 6px 10px; font: inherit; font-size: 13px; font-variant-numeric: tabular-nums; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
+  .day:hover { border-color: var(--accent); }
+  .day[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  .day.done { border-color: var(--accent); }
+  .btn.warn { border-color: var(--warn); color: var(--warn); }
+  .btn.warn[aria-pressed="true"] { background: var(--warn-soft); }
+  .btn.primary:disabled { opacity: .5; }
+  .group { margin: 16px 0 0; }
+  .group .pick-label { margin-bottom: 6px; }
+  table.rep { width: 100%; border-collapse: collapse; font-size: 13.5px; font-variant-numeric: tabular-nums; }
+  table.rep th { text-align: left; color: var(--muted); font-weight: 600; font-size: 12px; padding: 4px 6px 4px 0; border-bottom: 1px solid var(--line); }
+  table.rep td { padding: 4px 6px 4px 0; border-bottom: 1px solid var(--line); }
+  table.rep tr.off td { color: var(--neg); }
+  .verdict { margin: 0 0 8px; font-weight: 600; }
+  .verdict.ok { color: var(--pos); } .verdict.no { color: var(--neg); }
+  .empty { color: var(--muted); font-size: 13.5px; }
+  .stage { min-height: 250px; }
+  .why { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; margin: 0 0 6px; }
+  .why .panel h2 { font-size: 16px; }
+  .why ol, .why ul { margin: 6px 0 0; padding-left: 20px; }
+  .why li { margin: 4px 0; }
+  .why li span { color: var(--muted); display: block; margin-top: 3px; }
+  .tries li { margin: 9px 0; }
+  .btn.try { padding: 5px 11px; margin: 0 4px 2px 0; border-color: var(--accent); color: var(--accent); font-weight: 600; }
+  .btn.try:disabled { opacity: .5; }
+  .btn.try.done { background: var(--accent); color: var(--accent-ink); }
+  .btn.try.done::before { content: "\2713\00a0\00a0"; }
+  .btn.try.done:disabled { opacity: 1; }
+  .hint { animation: hint 1.3s ease-in-out infinite; }
+  @keyframes hint {
+    0%, 100% { box-shadow: 0 0 0 0 var(--accent); transform: scale(1); }
+    50% { box-shadow: 0 0 0 7px var(--accent-soft); transform: scale(1.03); }
+  }
+  .all-done { margin: 10px 0 0; padding: 8px 12px; border-radius: 8px; background: var(--pos-soft); color: var(--pos); font-weight: 600; }
+  #guide, #toolbar { scroll-margin-top: 14px; }
+  .btn.warn[aria-pressed="true"] { background: var(--warn); border-color: var(--warn); color: var(--bg); }
+  .btn.warn[aria-pressed="true"] small { color: var(--bg); opacity: .9; }
+  .armed { margin: 8px 0 0; color: var(--warn); font-weight: 600; font-size: 13.5px; min-height: 1.4em; }
+  .outcome { display: grid; gap: 10px; margin: 0 0 16px; }
+  .result { padding: 14px 18px; border-radius: 12px; border: 2px solid var(--pos); background: var(--pos-soft); }
+  .result.changed { border-color: var(--warn); background: var(--warn-soft); }
+  .result.stopped, .result.bad { border-color: var(--neg); background: var(--neg-soft); }
+  .result b { display: block; font-size: 16px; }
+  .result p { margin: 4px 0 0; }
+  .result small { display: block; margin-top: 6px; color: var(--muted); font-weight: 600; }
+  .btn.warn small { display: block; font-weight: 400; font-size: 11.5px; color: var(--muted); }
+  @media (max-width: 760px) { .why { grid-template-columns: minmax(0, 1fr); } }
+</style>
+</head>
+<body>
+<div class="page">
+  <header>
+    <p class="eyebrow">Daily Orders: API to Warehouse · live</p>
+    <h1>Run the pipeline yourself</h1>
+    <p class="lede">This page is a demo of the finished project. You do not build anything here. You press a button, and watch the pipeline you will learn to build do one morning of work.</p>
+  </header>
+
+  <div class="why">
+    <section class="panel">
+      <p class="kicker">What is this, and why run it?</p>
+      <h2>A grocery company needs one report every morning</h2>
+      <ul>
+        <li>Arden's manager asks: how many orders did we take yesterday, and how much money?</li>
+        <li>The orders live in the order system. A <b>pipeline</b> copies them into a warehouse and adds them up.</li>
+        <li>Each <b>Run</b> below is one morning of that pipeline. What you get is the report on the right.</li>
+        <li>The point: the report stays <b>right</b>, also when things go wrong. That is what the five milestones teach.</li>
+      </ul>
+    </section>
+    <section class="panel" id="guide">
+      <p class="kicker">Try these four things, in order</p>
+      <h2>Each one shows a problem the project solves</h2>
+      <ol class="tries">
+        <li><button class="btn try" type="button" data-morning="2026-06-08">Run Monday 8 June</button>
+            <button class="btn try" type="button" data-morning="2026-06-09">then Tuesday 9 June</button>
+            <span>On Tuesday an old day, Friday, changes. The page says why.</span></li>
+        <li><button class="btn try" type="button" data-again="1">Run the same morning again</button>
+            <span>Nothing may change.</span></li>
+        <li><button class="btn try" type="button" data-morning="2026-06-10" data-break="api_down,page_twice">Take the API down, send a page twice, and run Wednesday</button>
+            <span>The pipeline should survive both. The report stays right.</span></li>
+        <li><button class="btn try" type="button" data-morning="2026-06-11" data-break="bad_status">Send a bad row and run Thursday</button>
+            <span>Now the pipeline should stop, on purpose. A normal Thursday run does not break anything: the bad row does.</span></li>
+      </ol>
+      <p class="all-done" id="all-done" hidden>All four done. You have seen what the project builds. Next: start milestone 1.</p>
+    </section>
+  </div>
+
+  <section class="group" aria-label="Pick a morning">
+    <p class="pick-label" id="days-label">1. Pick a morning. Start early in June and work forward, or jump anywhere</p>
+    <div class="days" id="days" role="group" aria-labelledby="days-label"></div>
+  </section>
+
+  <section class="group" aria-label="Break something">
+    <p class="pick-label" id="break-label">2. Optional: make something go wrong in the next run. Press one, then press Run</p>
+    <div class="btns" id="breaks" role="group" aria-labelledby="break-label"></div>
+    <p class="armed" id="armed" aria-live="polite"></p>
+  </section>
+
+  <div class="toolbar" id="toolbar">
+    <div class="btns">
+      <button class="btn primary" id="run" type="button">Run this morning</button>
+      <button class="btn" id="again" type="button">Run the same morning again</button>
+      <button class="btn primary" id="fix" type="button" hidden>Fix the source and run again</button>
+      <button class="btn" id="reset" type="button">Start over</button>
+    </div>
+    <span class="progress-text" id="progress-text"></span>
+    <span class="clock" id="clock">no run yet</span>
+  </div>
+  <div class="bar" aria-hidden="true"><i id="bar"></i></div>
+
+  <div class="outcome" id="outcome" aria-live="polite"></div>
+
+  <main class="layout">
+    <div>
+      <div class="diagram" id="diagram"><div class="lane" id="lane"></div></div>
+      <div class="bands">
+        <div class="band" style="border-style:solid"><span class="role">Schedule</span><b>you, pressing Run</b><span>In milestone 5 an Airflow DAG starts this every day at 07:00.</span></div>
+        <div class="band" style="border-style:solid"><span class="role">Tests</span><b>31 table tests</b><span>They run on every build. A failed test stops the report.</span></div>
+      </div>
+    </div>
+    <aside class="side">
+      <section class="panel" id="detail" aria-live="polite">
+        <p class="kicker" id="d-kicker">Ready</p>
+        <h2 id="d-title">Pick a morning and press Run</h2>
+        <p id="d-text">Start with Monday 8 June, or go back to the first morning, 2 June. Each run reads only what changed since the last one.</p>
+      </section>
+      <section class="panel">
+        <p class="kicker">The report, against the answer key</p>
+        <p class="verdict" id="verdict"></p>
+        <div id="report"><p class="empty">No report yet.</p></div>
+      </section>
+      <section class="panel">
+        <p class="kicker">Every run so far</p>
+        <div id="log"><p class="empty">No run yet.</p></div>
+      </section>
+    </aside>
+  </main>
+
+  <p class="foot">This page runs the real code in <code>src/m5_on_a_schedule/</code>, with a private order system and its own database, <code>arden_live</code>. Waiting is skipped: when the pipeline wants to wait for the API, the page says how long, and carries on. The answer key is worked out from the order system's own event log, with no pipeline code. All data is fictional.</p>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  var $ = function (id) { return document.getElementById(id); };
+  var STAGES = [
+    { id: 'api', name: 'Order system API', role: 'Source' },
+    { id: 'extract', name: 'Extract', role: 'Ingest' },
+    { id: 'raw', name: 'Raw landing table', role: 'Store' },
+    { id: 'orders', name: 'Clean orders table', role: 'Transform, test' },
+    { id: 'report', name: 'Daily report', role: 'Serve' }
+  ];
+  var reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var stageEls = {}, state = null, chosen = null, busy = false, stoppedMorning = null;
+  var tries = Array.prototype.slice.call(document.querySelectorAll('.btn.try'));
+  var triesDone = {}, currentTry = null, lastTry = -1;       // which experiments are finished, and which one is running
+
+  function el(tag, cls, text) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text != null) e.textContent = text;
+    return e;
+  }
+  function call(path, body) {
+    return fetch(path, body ? { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) } : undefined)
+      .then(function (r) { return r.json(); });
+  }
+
+  STAGES.forEach(function (s) {
+    var box = el('section', 'stage');
+    box.setAttribute('aria-label', s.name);
+    box.appendChild(el('span', 'role', s.role));
+    box.appendChild(el('span', 'name', s.name));
+    var count = el('div', 'count'), cards = el('div', 'cards');
+    box.appendChild(count); box.appendChild(cards);
+    $('lane').appendChild(box);
+    stageEls[s.id] = { box: box, count: count, cards: cards };
+  });
+
+  function clearStages() {
+    STAGES.forEach(function (s) {
+      stageEls[s.id].count.textContent = '';
+      stageEls[s.id].cards.textContent = '';
+      stageEls[s.id].box.className = 'stage';
+    });
+  }
+
+  function fly(from, to, cards) {
+    if (reduceMotion || !from) return;
+    var diagram = $('diagram'), base = diagram.getBoundingClientRect();
+    var a = stageEls[from].box.getBoundingClientRect(), b = stageEls[to].box.getBoundingClientRect();
+    var labels = cards.filter(function (c) { return typeof c.id === 'number'; }).map(function (c) { return '#' + c.id; });
+    if (!labels.length) labels = ['rows', 'rows', 'rows'];
+    labels.slice(0, 5).forEach(function (label, i) {
+      var chip = el('span', 'fly', label);
+      var x0 = a.left - base.left + a.width / 2 - 24, y0 = a.top - base.top + 80 + i * 22;
+      var x1 = b.left - base.left + b.width / 2 - 24, y1 = b.top - base.top + 80 + i * 22;
+      chip.style.transform = 'translate(' + x0 + 'px,' + y0 + 'px)';
+      diagram.appendChild(chip);
+      setTimeout(function () { chip.style.opacity = '1'; chip.style.transform = 'translate(' + x1 + 'px,' + y1 + 'px)'; }, 40 + i * 80);
+      setTimeout(function () { chip.style.opacity = '0'; }, 900 + i * 80);
+      setTimeout(function () { chip.remove(); }, 1300 + i * 80);
+    });
+  }
+
+  function showStep(steps, index) {
+    var step = steps[index], parts = stageEls[step.stage];
+    STAGES.forEach(function (s) { stageEls[s.id].box.classList.remove('active', 'problem', 'fix'); });
+    parts.box.classList.add('active');
+    if (step.tone) parts.box.classList.add(step.tone);
+    parts.count.textContent = step.count;
+    parts.cards.textContent = '';
+    step.cards.forEach(function (c) {
+      var card = el('div', 'card' + (c.tone ? ' ' + c.tone : ''));
+      card.appendChild(el('b', null, typeof c.id === 'number' ? '#' + c.id : c.id));
+      card.appendChild(el('span', 'amt', c.amount));
+      card.appendChild(el('span', 'sub', c.sub));
+      parts.cards.appendChild(card);
+    });
+    if (index > 0) fly(steps[index - 1].stage, step.stage, step.cards);
+    $('detail').className = 'panel' + (step.tone ? ' ' + step.tone : '');
+    $('d-kicker').textContent = 'Step ' + (index + 1) + ' of ' + steps.length + ' · ' + parts.box.getAttribute('aria-label');
+    $('d-title').textContent = step.title;
+    $('d-text').textContent = step.text;
+    $('progress-text').textContent = 'Step ' + (index + 1) + ' of ' + steps.length;
+    $('bar').style.width = ((index + 1) / steps.length * 100) + '%';
+  }
+
+  function moveTo(id) {
+    $(id).scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' });
+  }
+
+  // Tick the experiments that are finished, and make the next one pulse.
+  function updateGuide() {
+    var next = null, first = null;
+    tries.forEach(function (button, i) {
+      button.classList.toggle('done', !!triesDone[i]);
+      button.classList.remove('hint');
+      if (triesDone[i]) return;
+      if (first === null) first = button;
+      if (next === null && i > lastTry) next = button;      // the one after the experiment you just did
+    });
+    next = next || first;
+    if (next && !busy && currentTry === null) next.classList.add('hint');
+    $('all-done').hidden = next !== null;
+  }
+
+  // After a run that an experiment button started: go back to the list.
+  function afterExperiment(result) {
+    if (currentTry === null) return;
+    if (result.bad_status) {                       // the pipeline stopped on purpose: the next press is "Fix"
+      $('fix').classList.add('hint');
+      return;
+    }
+    triesDone[currentTry] = true;
+    lastTry = currentTry;
+    currentTry = null;
+    setTimeout(function () {                        // a moment to read what happened, then back to the list
+      moveTo('guide');
+      updateGuide();
+    }, reduceMotion ? 0 : 4000);
+  }
+
+  function showOutcome(result) {
+    var box = $('outcome');
+    box.textContent = '';
+    (result.outcome || []).forEach(function (o) {
+      var card = el('div', 'result' + (o.tone !== 'good' ? ' ' + o.tone : ''));
+      card.appendChild(el('b', null, o.you));
+      card.appendChild(el('p', null, o.it));
+      card.appendChild(el('small', null, 'You learn to build this in: ' + o.from));
+      box.appendChild(card);
+    });
+  }
+
+  function play(result) {
+    var steps = result.steps, index = 0;
+    $('outcome').textContent = '';
+    clearStages();
+    (function next() {
+      showStep(steps, index);
+      index += 1;
+      if (index < steps.length) setTimeout(next, reduceMotion ? 0 : 1500);
+      else { busy = false; showOutcome(result); render(result.state, result); afterExperiment(result); }
+    })();
+  }
+
+  function render(newState, result) {
+    state = newState;
+    if (!chosen) chosen = state.last_morning || '2026-06-08';
+    $('days').textContent = '';
+    var ran = state.log.map(function (r) { return r.run_id.slice(0, 10); });
+    state.mornings.forEach(function (m) {
+      var b = el('button', 'day' + (ran.indexOf(m.date) !== -1 ? ' done' : ''), m.label);
+      b.type = 'button';
+      b.setAttribute('aria-pressed', String(m.date === chosen));
+      b.addEventListener('click', function () { chosen = m.date; render(state); });
+      $('days').appendChild(b);
+    });
+    $('breaks').textContent = '';
+    Object.keys(state.breaks).forEach(function (kind) {
+      var b = el('button', 'btn warn', state.breaks[kind]);
+      b.appendChild(el('small', null, (state.planned.indexOf(kind) !== -1 ? 'SWITCHED ON for the next run. ' : '') + state.expect[kind]));
+      b.type = 'button';
+      b.setAttribute('aria-pressed', String(state.planned.indexOf(kind) !== -1));
+      b.addEventListener('click', function () { call('/api/break', { kind: kind }).then(render); });
+      $('breaks').appendChild(b);
+    });
+    $('armed').textContent = state.planned.length
+      ? 'Switched on for the next run: ' + state.planned.map(function (k) { return state.breaks[k].toLowerCase(); }).join(', ') + '. Now press Run.'
+      : 'Nothing is switched on. The next run will be a normal morning.';
+    Array.prototype.forEach.call(document.querySelectorAll('.btn.try'), function (b) {
+      b.disabled = busy || (b.dataset.again && !state.last_morning);
+    });
+    $('run').disabled = busy;
+    $('again').disabled = busy || !state.last_morning;
+    $('run').textContent = 'Run ' + state.mornings.filter(function (m) { return m.date === chosen; })[0].label;
+    if (result) {
+      stoppedMorning = result.bad_status ? result.morning : null;
+      $('fix').hidden = !result.bad_status;
+    }
+    $('fix').disabled = busy;
+    $('clock').textContent = state.last_morning ? 'last run: ' + state.last_morning + ', 07:00' : 'no run yet';
+
+    var report = state.report, box = $('report');
+    box.textContent = '';
+    $('verdict').className = 'verdict' + (report.all_right === true ? ' ok' : report.all_right === false ? ' no' : '');
+    $('verdict').textContent = report.all_right === true ? 'Every day equals the answer key.' :
+      report.all_right === false ? report.wrong_days + ' days differ from the answer key.' : '';
+    if (!report.days.length) box.appendChild(el('p', 'empty', 'No report yet.'));
+    else {
+      var table = el('table', 'rep'), head = el('tr');
+      ['Day', 'Orders', 'Money', 'Answer key'].forEach(function (h) { head.appendChild(el('th', null, h)); });
+      table.appendChild(head);
+      report.days.slice(0, 8).forEach(function (d) {
+        var tr = el('tr', d.right ? null : 'off');
+        [d.day, d.orders, d.money, d.right ? 'same' : d.truth].forEach(function (v) { tr.appendChild(el('td', null, String(v))); });
+        table.appendChild(tr);
+      });
+      box.appendChild(table);
+    }
+    var log = $('log');
+    log.textContent = '';
+    if (!state.log.length) log.appendChild(el('p', 'empty', 'No run yet.'));
+    else {
+      var t = el('table', 'rep'), h = el('tr');
+      ['Run', 'Rows', 'Calls', 'Retries', 'Tests'].forEach(function (x) { h.appendChild(el('th', null, x)); });
+      t.appendChild(h);
+      state.log.forEach(function (r) {
+        var tr = el('tr', r.tests_failed ? 'off' : null);
+        var tests = r.tests_failed ? r.tests_failed + ' failed' : (r.tests_passed == null ? 'not run' : r.tests_passed + ' passed');
+        [r.run_id, r.rows_landed, r.api_calls, r.retries, tests].forEach(function (v) { tr.appendChild(el('td', null, String(v))); });
+        t.appendChild(tr);
+      });
+      log.appendChild(t);
+    }
+  }
+
+  function run(morning) {
+    if (busy) return;
+    busy = true;
+    $('run').disabled = true; $('again').disabled = true;
+    $('d-kicker').textContent = 'Running';
+    $('d-title').textContent = 'The pipeline is running';
+    $('d-text').textContent = 'Extract, load, dbt build, table tests. This takes a few seconds.';
+    call('/api/run', { morning: morning }).then(play).catch(function () {
+      busy = false;
+      $('d-title').textContent = 'The page lost the server';
+      $('d-text').textContent = 'Is "uv run python pipeline_live/server.py" still running?';
+    });
+  }
+
+  // The four experiments: one press does the whole thing.
+  tries.forEach(function (button, index) {
+    button.addEventListener('click', function () {
+      if (busy) return;
+      var morning = button.dataset.again ? state.last_morning : button.dataset.morning;
+      var kinds = (button.dataset.break || '').split(',').filter(Boolean);
+      currentTry = index;
+      updateGuide();
+      moveTo('toolbar');                            // go to where the run happens
+      var armed = kinds.reduce(function (chain, kind) {
+        return chain.then(function () { return call('/api/break', { kind: kind }); });
+      }, Promise.resolve(null));
+      armed.then(function (s) {
+        chosen = morning;
+        if (s) render(s);
+        run(morning);
+      });
+    });
+  });
+
+  $('run').addEventListener('click', function () { currentTry = null; updateGuide(); run(chosen); });
+  $('again').addEventListener('click', function () { if (state.last_morning) { chosen = state.last_morning; run(chosen); } });
+  // Fix the source: take the bad row out, then run the stopped morning again.
+  $('fix').addEventListener('click', function () {
+    if (busy || !stoppedMorning) return;
+    var morning = stoppedMorning;
+    call('/api/fix', {}).then(function (s) {
+      $('fix').hidden = true;
+      $('fix').classList.remove('hint');
+      chosen = morning;
+      render(s);
+      run(morning);
+    });
+  });
+  $('reset').addEventListener('click', function () { call('/api/reset', {}).then(function (s) { chosen = null; triesDone = {}; currentTry = null; lastTry = -1; clearStages(); $('outcome').textContent = ''; render(s); updateGuide(); }); });
+
+  // A link can start a run: http://127.0.0.1:8030/#run=2026-06-09
+  call('/api/state').then(function (s) {
+    render(s);
+    updateGuide();
+    var wanted = (location.hash.match(/run=(\d{4}-\d{2}-\d{2})/) || [])[1];
+    if (wanted) { chosen = wanted; render(s); run(wanted); }
+    var tryNo = (location.hash.match(/try=(\d)/) || [])[1];      // #try=5 presses the fifth experiment button
+    if (tryNo) document.querySelectorAll('.btn.try')[tryNo - 1].click();
+    if (/thenfix/.test(location.hash)) {                           // for checking: press Fix once the run has stopped
+      var waitForFix = setInterval(function () {
+        if (!busy && !$('fix').hidden) { clearInterval(waitForFix); $('fix').click(); }
+      }, 300);
+    }
+  });
+})();
+</script>
+</body>
+</html>

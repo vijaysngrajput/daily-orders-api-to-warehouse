@@ -1,0 +1,1747 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Milestone 3 flow: Safe to run twice</title>
+<style>
+  :root {
+    color-scheme: light;
+    --bg: #f6f4ef;
+    --surface: #fffdf9;
+    --ink: #1d2327;
+    --muted: #5c6670;
+    --line: #d9d4c8;
+    --accent: #0f6b5c;
+    --accent-ink: #ffffff;
+    --accent-soft: #dcefe9;
+    --neg: #a23b2a;
+    --neg-soft: #f6e1dc;
+    --pos: #1f6f43;
+    --pos-soft: #dff0e5;
+    --warn: #8a5a00;
+    --warn-soft: #f7ebcf;
+    --tag-bg: #ecebe4;
+    --shadow: 0 1px 2px rgba(29, 35, 39, .06), 0 6px 18px rgba(29, 35, 39, .06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --bg: #14181a;
+      --surface: #1c2226;
+      --ink: #e8e6e1;
+      --muted: #9aa4ab;
+      --line: #2e373c;
+      --accent: #5fc5b0;
+      --accent-ink: #0d1f1c;
+      --accent-soft: #1d3a35;
+      --neg: #e58a78;
+      --neg-soft: #3a2420;
+      --pos: #7fd0a0;
+      --pos-soft: #1d3527;
+      --warn: #e2b85c;
+      --warn-soft: #3a3019;
+      --tag-bg: #262e33;
+      --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 6px 18px rgba(0, 0, 0, .25);
+    }
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  .page { max-width: 1240px; margin: 0 auto; padding: 32px 24px 56px; }
+
+  .eyebrow {
+    margin: 0 0 6px;
+    font-size: 12px; font-weight: 600; letter-spacing: .09em; text-transform: uppercase;
+    color: var(--accent);
+  }
+  h1 {
+    margin: 0 0 8px;
+    font: 600 34px/1.15 "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    text-wrap: balance;
+  }
+  .lede { margin: 0 0 22px; max-width: 68ch; color: var(--muted); font-size: 16px; }
+
+  /* Follow one order */
+  .pick-label { margin: 0 0 8px; font-size: 13px; font-weight: 600; }
+  .picks { display: flex; flex-wrap: wrap; gap: 8px; }
+  .pick {
+    display: flex; flex-direction: column; align-items: flex-start;
+    padding: 8px 14px; min-width: 150px;
+    font: inherit; color: var(--ink); text-align: left;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 10px; cursor: pointer;
+    transition: border-color .2s, background .2s;
+  }
+  .pick:hover { border-color: var(--accent); }
+  .pick b { font-weight: 600; font-variant-numeric: tabular-nums; }
+  .pick small { color: var(--muted); font-size: 12px; }
+  .pick[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  .pick[aria-pressed="true"] small { color: inherit; opacity: .85; }
+
+  /* Playback toolbar */
+  .toolbar {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px;
+    margin: 20px 0 8px; padding-top: 16px; border-top: 1px solid var(--line);
+  }
+  .btns { display: flex; flex-wrap: wrap; gap: 6px; }
+  .btn {
+    padding: 7px 14px; font: inherit; font-weight: 500; color: var(--ink);
+    background: var(--surface); border: 1px solid var(--line); border-radius: 8px; cursor: pointer;
+  }
+  .btn:hover:not(:disabled) { border-color: var(--accent); }
+  .btn:disabled { opacity: .45; cursor: default; }
+  .btn.primary { min-width: 76px; background: var(--ink); color: var(--bg); border-color: var(--ink); }
+  .progress-text { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+  .clock {
+    margin-left: auto; padding: 4px 10px; border-radius: 999px;
+    background: var(--tag-bg); font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums;
+  }
+  .bar { height: 3px; background: var(--line); border-radius: 2px; overflow: hidden; margin-bottom: 20px; }
+  .bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .5s ease; }
+  :is(.pick, .btn, .stage):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* Layout */
+  .layout { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 26px; align-items: start; }
+  .side { position: sticky; top: 16px; display: grid; gap: 14px; }
+
+  /* The pipeline map */
+  .diagram { position: relative; }
+  .lane { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 22px; align-items: stretch; }
+  .stage {
+    position: relative; display: flex; flex-direction: column; min-height: 330px;
+    padding: 10px; text-align: left; font: inherit; color: var(--ink);
+    background: var(--surface); border: 2px solid var(--line); border-radius: 12px;
+    transition: border-color .3s, box-shadow .3s, background .3s;
+  }
+  .stage + .stage::before { /* arrow from the stage before */
+    content: "\2192"; position: absolute; left: -19px; top: 20px;
+    color: var(--muted); font-size: 16px; line-height: 1;
+  }
+  .stage.ghost { border-style: dashed; background: transparent; color: var(--muted); }
+  .stage.active { border-color: var(--accent); box-shadow: var(--shadow); }
+  .stage.active.problem { border-color: var(--neg); }
+  .stage.active.fix { border-color: var(--pos); }
+  .role { font-size: 10.5px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+  .name { margin: 1px 0 6px; font-size: 14.5px; font-weight: 600; line-height: 1.25; }
+  .badge {
+    align-self: flex-start; padding: 1px 7px; border-radius: 999px;
+    font-size: 11px; font-weight: 600; background: var(--tag-bg); color: var(--muted);
+  }
+  .badge.new { background: var(--accent-soft); color: var(--accent); }
+  .count {
+    margin: 8px 0 6px; min-height: 20px;
+    font-size: 12.5px; font-weight: 600; font-variant-numeric: tabular-nums;
+  }
+  .stage.active.problem .count { color: var(--neg); }
+  .stage.active.fix .count { color: var(--pos); }
+  .ghost-note { margin: 8px 0 0; font-size: 12.5px; line-height: 1.4; }
+  .cards { display: grid; gap: 5px; align-content: start; }
+  .card {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0 6px;
+    padding: 5px 7px; border: 1px solid var(--line); border-radius: 7px; background: var(--bg);
+    font-size: 12px; line-height: 1.3; font-variant-numeric: tabular-nums;
+    animation: arrive .45s ease both;
+  }
+  .card b { font-weight: 600; }
+  .card .amt { font-weight: 600; white-space: nowrap; }
+  .card .sub { grid-column: 1 / -1; color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
+  .card.bad { border-color: var(--neg); background: var(--neg-soft); }
+  .card.bad .sub { color: var(--neg); }
+  .card.good { border-color: var(--pos); background: var(--pos-soft); }
+  .card.good .sub { color: var(--pos); }
+  .card.changed { border-color: var(--warn); background: var(--warn-soft); }
+  .card.changed .sub { color: var(--warn); }
+  .card.followed { box-shadow: 0 0 0 2px var(--accent); }
+  @keyframes arrive { from { transform: translateY(5px); } to { transform: none; } }
+
+  /* Rows moving between stages */
+  .fly {
+    position: absolute; left: 0; top: 0; z-index: 3; pointer-events: none;
+    padding: 2px 8px; border-radius: 999px;
+    background: var(--accent); color: var(--accent-ink);
+    font-size: 11.5px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap;
+    box-shadow: var(--shadow); opacity: 0;
+    transition: transform .9s cubic-bezier(.5, 0, .2, 1), opacity .25s;
+  }
+
+  /* Bands under the map: schedule and tests */
+  .bands { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 14px; }
+  .band {
+    padding: 9px 12px; border: 2px dashed var(--line); border-radius: 12px;
+    color: var(--muted); font-size: 13px;
+  }
+  .band b { display: block; color: var(--ink); font-size: 13.5px; }
+  .band .role { display: block; }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 14px 0 0; color: var(--muted); font-size: 12.5px; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .swatch { width: 18px; height: 12px; border-radius: 4px; border: 2px solid var(--line); }
+  .swatch.s-new { border-color: var(--accent); }
+  .swatch.s-ghost { border-style: dashed; }
+  .swatch.s-bad { border-color: var(--neg); background: var(--neg-soft); }
+  .swatch.s-changed { border-color: var(--warn); background: var(--warn-soft); }
+
+  /* Side panels */
+  .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; }
+  .panel h2 { margin: 0 0 6px; font-size: 19px; line-height: 1.25; text-wrap: balance; }
+  .kicker { margin: 0 0 6px; font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  .panel p { margin: 0; }
+  .panel.problem { border-color: var(--neg); }
+  .panel.problem .kicker { color: var(--neg); }
+  .panel.fix { border-color: var(--pos); }
+  .panel.fix .kicker { color: var(--pos); }
+  .word { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
+  .word dt { font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--accent); }
+  .word dd { margin: 2px 0 0; }
+  .word dd b { display: block; font-size: 16px; }
+  .word dd span { font-size: 13.5px; color: var(--muted); }
+  .follow h2 { font-size: 15px; }
+  .follow p { font-size: 14px; }
+  .wrong {
+    margin: 26px 0 0; padding: 14px 18px; border-radius: 12px;
+    border: 1px solid var(--neg); background: var(--neg-soft);
+  }
+  .wrong b { color: var(--neg); }
+  .wrong span { display: block; margin-top: 2px; color: var(--muted); font-size: 13.5px; }
+  .foot { margin: 22px 0 0; padding-top: 14px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; max-width: 86ch; }
+  kbd { padding: 0 5px; border: 1px solid var(--line); border-radius: 4px; background: var(--surface); font: 12px ui-monospace, Menlo, Consolas, monospace; }
+
+  @media (max-width: 1040px) {
+    .layout { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+    .side { position: static; order: -1; }
+  }
+  @media (max-width: 760px) {
+    .page { padding: 22px 16px 40px; }
+    h1 { font-size: 27px; }
+    .lane { grid-template-columns: minmax(0, 1fr); gap: 26px; }
+    .stage { min-height: 0; }
+    .stage + .stage::before { content: "\2193"; left: 18px; top: -23px; }
+    .cards { grid-template-columns: 1fr 1fr; }
+    .bands { grid-template-columns: 1fr; }
+    .pick { min-width: 0; flex: 1 1 140px; }
+    .clock { margin-left: 0; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+  <header>
+    <p class="eyebrow" id="eyebrow"></p>
+    <h1 id="title"></h1>
+    <p class="lede" id="lede"></p>
+  </header>
+
+  <section aria-label="Follow one order">
+    <p class="pick-label" id="pick-label">Follow one order through every stage</p>
+    <div class="picks" id="picks" role="group" aria-labelledby="pick-label"></div>
+  </section>
+
+  <div class="toolbar">
+    <div class="btns">
+      <button class="btn" id="back" type="button">Back</button>
+      <button class="btn primary" id="play" type="button">Play</button>
+      <button class="btn" id="next" type="button">Next</button>
+      <button class="btn" id="again" type="button">Run it again</button>
+      <button class="btn" id="restart" type="button">Restart</button>
+    </div>
+    <span class="progress-text" id="progress-text"></span>
+    <span class="clock" id="clock" title="The time on the order system's clock"></span>
+  </div>
+  <div class="bar" aria-hidden="true"><i id="bar"></i></div>
+
+  <main class="layout">
+    <div>
+      <div class="diagram" id="diagram">
+        <div class="lane" id="lane"></div>
+      </div>
+      <div class="bands">
+        <div class="band" id="band-schedule"><span class="role">Schedule</span><b></b><span></span></div>
+        <div class="band" id="band-tests"><span class="role">Tests</span><b></b><span></span></div>
+      </div>
+      <p class="legend" aria-label="Legend">
+        <span><i class="swatch s-new"></i> stage in use at this step</span>
+        <span><i class="swatch s-ghost"></i> not built yet</span>
+        <span><i class="swatch s-bad"></i> wrong</span>
+        <span><i class="swatch s-changed"></i> changed since the last run</span>
+      </p>
+    </div>
+
+    <aside class="side">
+      <section class="panel" id="detail" aria-label="Current step">
+        <p class="kicker" id="d-kicker"></p>
+        <h2 id="d-title"></h2>
+        <p id="d-text"></p>
+        <dl class="word">
+          <dt>The word</dt>
+          <dd><b id="w-term"></b><span id="w-meaning"></span></dd>
+        </dl>
+      </section>
+      <section class="panel follow" aria-label="The order you follow">
+        <p class="kicker">The order you follow</p>
+        <h2 id="f-title"></h2>
+        <p id="f-text"></p>
+      </section>
+    </aside>
+  </main>
+
+  <p class="wrong"><b>Still wrong at the end of this milestone.</b> <span id="wrong-text"></span></p>
+
+  <p class="foot">Use <kbd>←</kbd> and <kbd>→</kbd> to step, and <kbd>Space</kbd> to play or pause. Every number on this page was written by <code>daily_orders/flow_data.py</code> from a real run of this milestone's code, and a test checks that they still match. All data is fictional.</p>
+</div>
+
+<script id="page-data" type="application/json">
+{
+ "recap": {
+  "before": {
+   "rows": 255,
+   "orders": 251,
+   "shown": "38 orders, $985.79",
+   "truth": "37 orders, $971.04",
+   "day": "Fri 06-05"
+  },
+  "merge": {
+   "read": 102,
+   "inserted": 25,
+   "updated": 4,
+   "left_alone": 73,
+   "orders": 251,
+   "raw": 328,
+   "since": "2026-06-06T03:48:53Z",
+   "days_rebuilt": 4
+  },
+  "again": {
+   "read": 62,
+   "inserted": 0,
+   "updated": 0,
+   "same": "identical",
+   "raw": 390,
+   "orders": 251
+  },
+  "late": {
+   "order": 1244,
+   "by": "$18.26",
+   "day": "Mon 06-08",
+   "lookback": 2
+  },
+  "page": {
+   "landed": 120,
+   "staged": 95
+  },
+  "deleted": {
+   "order": 1356,
+   "by": "$14.24",
+   "day": "Fri 06-12"
+  },
+  "end": {
+   "raw": 889,
+   "orders": 399,
+   "right": "every day"
+  },
+  "refund": {
+   "order": 1130,
+   "by": "$5.78",
+   "day": "Fri 06-05"
+  }
+ },
+ "milestone": 3,
+ "of": 5,
+ "title": "Safe to run twice",
+ "lede": "Everything still lands raw. Then a MERGE by the order's key keeps one row per order, and the report is rebuilt one day at a time. Run it again, and nothing changes.",
+ "stages": [
+  {
+   "id": "api",
+   "name": "Order system API",
+   "role": "Source",
+   "state": "given"
+  },
+  {
+   "id": "extract",
+   "name": "Extract",
+   "role": "Ingest",
+   "state": "new",
+   "badge": "changed: looks back"
+  },
+  {
+   "id": "raw",
+   "name": "Raw landing table",
+   "role": "Store",
+   "state": "built",
+   "badge": "append, as before"
+  },
+  {
+   "id": "orders",
+   "name": "Clean orders table",
+   "role": "Transform, store",
+   "state": "new",
+   "badge": "new: one row per order"
+  },
+  {
+   "id": "report",
+   "name": "Daily report",
+   "role": "Serve",
+   "state": "new",
+   "badge": "new: a table, per day"
+  }
+ ],
+ "schedule": {
+  "state": "by_hand",
+  "text": "By hand. A person starts every run. A schedule arrives in milestone 5."
+ },
+ "tests": {
+  "state": "not_yet",
+  "text": "Not yet. Tests check the code, but nothing checks the tables. Table tests arrive in milestone 4."
+ },
+ "cases": [
+  {
+   "id": "1130",
+   "label": "Order 1130",
+   "hint": "refunded: now one row"
+  },
+  {
+   "id": "1244",
+   "label": "Order 1244",
+   "hint": "late update: now caught"
+  },
+  {
+   "id": "1356",
+   "label": "Order 1356",
+   "hint": "deleted: now marked"
+  }
+ ],
+ "steps": [
+  {
+   "id": "before",
+   "active": "report",
+   "problem": true,
+   "clock": "Tue 06-09, 07:00",
+   "title": "Where milestone 2 left it",
+   "text": "The raw table holds 255 rows for 251 orders. A report that adds up every landed row shows 38 orders and $985.79 for Fri 06-05. The truth is 37 orders and $971.04.",
+   "word": {
+    "term": "Append",
+    "meaning": "Add rows at the end of a table. Right for raw data. Wrong for a table people count from."
+   },
+   "stages": {
+    "api": {
+     "count": "251 orders",
+     "cards": [
+      {
+       "id": 1130,
+       "amount": "$8.97",
+       "sub": "changed 06-08 16:00Z · delivered",
+       "tone": ""
+      }
+     ]
+    },
+    "extract": {
+     "count": "",
+     "cards": []
+    },
+    "raw": {
+     "count": "255 rows · 251 orders",
+     "cards": [
+      {
+       "id": 1130,
+       "amount": "$14.75",
+       "sub": "run 06-08_1 · delivered",
+       "tone": "changed"
+      },
+      {
+       "id": 1130,
+       "amount": "$8.97",
+       "sub": "run 06-09_1 · delivered",
+       "tone": "changed"
+      }
+     ]
+    },
+    "orders": {
+     "count": "milestone 2: only a view",
+     "cards": [
+      {
+       "id": 1130,
+       "amount": "$14.75",
+       "sub": "run 06-08_1 · delivered",
+       "tone": "bad"
+      },
+      {
+       "id": 1130,
+       "amount": "$8.97",
+       "sub": "run 06-09_1 · delivered",
+       "tone": "bad"
+      }
+     ]
+    },
+    "report": {
+     "count": "counted twice",
+     "cards": [
+      {
+       "id": "Fri 06-05",
+       "amount": "$985.79",
+       "sub": "38 orders · truth: 37, $971.04",
+       "tone": "bad"
+      }
+     ]
+    }
+   },
+   "moves": [],
+   "follow": {
+    "1130": "Landed twice: before and after its refund. The report adds both.",
+    "1244": "Not placed yet.",
+    "1356": "Not placed yet."
+   }
+  },
+  {
+   "id": "lookback",
+   "active": "extract",
+   "clock": "Tue 06-09, 07:00",
+   "title": "Extract looks back two days",
+   "text": "The watermark is 2026-06-08T03:48:53Z. The pipeline asks for orders changed since 2026-06-06T03:48:53Z, 2 days earlier, to catch changes that arrive late. It reads 102 rows. Most of them it already holds.",
+   "word": {
+    "term": "Lookback",
+    "meaning": "The window starts N days before the watermark, to catch late rows. It is safe only because the write is idempotent."
+   },
+   "stages": {
+    "api": {
+     "count": "251 orders",
+     "cards": [
+      {
+       "id": 1130,
+       "amount": "$8.97",
+       "sub": "changed 06-08 16:00Z · delivered",
+       "tone": "changed"
+      },
+      {
+       "id": 1224,
+       "amount": "$70.18",
+       "sub": "changed 06-08 15:25Z · delivered",
+       "tone": "changed"
+      }
+     ]
+    },
+    "extract": {
+     "count": "102 rows · since 06-06 03:48Z",
+     "cards": [
+      {
+       "id": 1130,
+       "amount": "$8.97",
+       "sub": "changed 06-08 16:00Z · delivered",
+       "tone": "changed"
+      },
+      {
+       "id": 1224,
+       "amount": "$70.18",
+       "sub": "changed 06-08 15:25Z · delivered",
+       "tone": "changed"
+      }
+     ]
+    },
+    "raw": {
+     "count": "226 rows",
+     "cards": []
+    },
+    "orders": {
+     "count": "226 rows",
+     "cards": []
+    },
+    "report": {
+     "count": "",
+     "cards": []
+    }
+   },
+   "moves": [
+    {
+     "from": "api",
+     "to": "extract"
+    }
+   ],
+   "follow": {
+    "1130": "It was refunded on Monday, so it is inside the window.",
+    "1244": "Placed on Monday evening. It is read as 'out for delivery'.",
+    "1356": "Not placed yet."
+   }
+  },
+  {
+   "id": "land",
+   "active": "raw",
+   "clock": "Tue 06-09, 07:00",
+   "title": "Everything still lands raw",
+   "text": "All 102 rows are appended, as in milestone 2. The raw table now holds 328 rows for 251 orders. It keeps every version and every repeat. Nobody counts from it.",
+   "word": {
+    "term": "Append",
+    "meaning": "Add rows at the end of a table. Right for raw data. Wrong for a table people count from."
+   },
+   "stages": {
+    "api": {
+     "count": "251 orders",
+     "cards": [
+      {
+       "id": 1130,
+       "amount": "$8.97",
+       "sub": "changed 06-08 16:00Z · delivered",
+       "tone": "changed"
+      },
+      {
+       "id": 1224,
+       "amount": "$70.18",
+       "sub": "changed 06-08 15:25Z · delivered",
+       "tone": "changed"
+      }
+     ]
+    },
+    "extract": {
+     "count": "102 rows",
+     "cards": [
+      {
+       "id": 1130,
+       "amount": "$8.97",
+       "sub": "changed 06-08 16:00Z · delivered",
+       "tone": "changed"
+      },
+      {
+       "id": 1224,
+       "amount": "$70.18",
+       "sub": "changed 06-08 15:25Z · delivered",
+       "tone": "changed"
+      }
+     ]
+    },
+    "raw": {
+     "count": "328 rows · 251 orders",
+     "cards": [
+      {
+       "id": 1130,
+       "amount": "$14.75",
+       "sub": "run 06-08_1 · delivered",
+       "tone": "changed"
+      },
+      {
+       "id": 1130,
+       "amount": "$8.97",
+       "sub": "run 06-09_1 · delivered",
+       "tone": "changed"
+      },
+      {
+       "id": 1224,
+       "amount": "$70.18",
+       "sub": "run 06-08_1 · placed",
+       "tone": "changed"
+      },
+      {
+       "id": 1224,
+       "amount": "$70.18",
+       "sub": "run 06-09_1 · delivered",
+       "tone": "changed"
+      }
+     ]
+    },
+    "orders": {
+     "count": "226 rows",
+     "cards": []
+    },
+    "report": {
+     "count": "",
+     "cards": []
+    }
+   },
+   "moves": [
+    {
+     "from": "extract",
+     "to": "raw"
+    }
+   ],
+   "follow": {
+    "1130": "Its refunded version lands beside the old one. The raw table keeps both.",
+    "1244": "It lands once, as 'out for delivery'.",
+    "1356": "Not placed yet."
+   }
+  },
+  {
+   "id": "merge",
+   "active": "orders",
+   "fix": true,
+   "clock": "Tue 06-09, 07:00",
+   "title": "The fix: MERGE by order_id",
+   "text": "Each row is matched to the clean table by its key. 25 orders are new and are inserted. 4 are known and newer, and are updated. 73 are the version the table already holds, and are left alone. 251 orders, 251 rows.",
+   "word": {
+    "term": "Upsert with MERGE",
+    "meaning": "Update the row if the key exists, add it if not. One order is one row, however often it arrives."
+   },
+   "stages": {
+    "api": {
+     "count": "251 orders",
+     "cards": [
+      {
+       "id": 1130,
+       "amount": "$8.97",
+       "sub": "changed 06-08 16:00Z · delivered",
+       "tone": "changed"
+      },
+      {
+       "id": 1224,
+       "amount": "$70.18",
+       "sub": "changed 06-08 15:25Z · delivered",
+       "tone": "changed"
+      }
+     ]
+    },
+    "extract": {
+     "count": "102 rows",
+     "cards": []
+    },
+    "raw": {
+     "count": "328 rows · 251 orders",
+     "cards": [
+      {
+       "id": 1130,
+       "amount": "$14.75",
+       "sub": "run 06-08_1 · delivered",
+       "tone": "changed"
+      },
+      {
+       "id": 1130,
+       "amount": "$8.97",
+       "sub": "run 06-09_1 · delivered",
+       "tone": "changed"
+      },
+      {
+       "id": 1224,
+       "amount": "$70.18",
+       "sub": "run 06-08_1 · placed",
+       "tone": "changed"
+      },
+      {
+       "id": 1224,
+       "amount": "$70.18",
+       "sub": "run 06-09_1 · delivered",
+       "tone": "changed"
+      }
+     ]
+    },
+    "orders": {
+     "count": "251 rows = 251 orders",
+     "cards": [
+      {
+       "id": 1130,
+       "amount": "$8.97",
+       "sub": "Fri 06-05 · delivered",
+       "tone": "good"
+      },
+      {
+       "id": 1224,
+       "amount": "$70.18",
+       "sub": "Sun 06-07 · delivered",
+       "tone": "good"
+      },
+      {
+       "id": "inserted",
+       "amount": "25",
+       "sub": "new orders",
+       "tone": ""
+      },
+      {
+       "id": "updated",
+       "amount": "4",
+       "sub": "a newer version",
+       "tone": ""
+      },
+      {
+       "id": "left alone",
+       "amount": "73",
+       "sub": "already held",
+       "tone": ""
+      }
+     ]
+    },
+    "report": {
+     "count": "",
+     "cards": []
+    }
+   },
+   "moves": [
+    {
+     "from": "raw",
+     "to": "orders"
+    }
+   ],
+   "follow": {
+    "1130": "It is in the clean table already, and this version is newer. Its row is updated. One row.",
+    "1244": "It is new, so it is inserted.",
+    "1356": "Not placed yet."
+   }
+  },
+  {
+   "id": "report",
+   "active": "report",
+   "fix": true,
+   "clock": "Tue 06-09, 07:00",
+   "title": "The report is rebuilt, one day at a time",
+   "text": "The run touched orders of 4 business days. Only those days are deleted and built again from the clean table. Fri 06-05 moves by -$5.78, and the pipeline writes down why: order 1130, refund of $5.78.",
+   "word": {
+    "term": "Partition",
+    "meaning": "One slice of a table. Here, all the rows of one business day. A day is replaced, never added to."
+   },
+   "stages": {
+    "api": {
+     "count": "251 orders",
+     "cards": [
+      {
+       "id": 1130,
+       "amount": "$8.97",
+       "sub": "changed 06-08 16:00Z · delivered",
+       "tone": "changed"
+      },
+      {
+       "id": 1224,
+       "amount": "$70.18",
+       "sub": "changed 06-08 15:25Z · delivered",
+       "tone": "changed"
+      }
+     ]
+    },
+    "extract": {
+     "count": "102 rows",
+     "cards": []
+    },
+    "raw": {
+     "count": "328 rows · 251 orders",
+     "cards": [
+      {
+       "id": 1130,
+       "amount": "$14.75",
+       "sub": "run 06-08_1 · delivered",
+       "tone": "changed"
+      },
+      {
+       "id": 1130,
+       "amount": "$8.97",
+       "sub": "run 06-09_1 · delivered",
+       "tone": "changed"
+      },
+      {
+       "id": 1224,
+       "amount": "$70.18",
+       "sub": "run 06-08_1 · placed",
+       "tone": "changed"
+      },
+      {
+       "id": 1224,
+       "amount": "$70.18",
+       "sub": "run 06-09_1 · delivered",
+       "tone": "changed"
+      }
+     ]
+    },
+    "orders": {
+     "count": "251 rows = 251 orders",
+     "cards": [
+      {
+       "id": 1130,
+       "amount": "$8.97",
+       "sub": "Fri 06-05 · delivered",
+       "tone": "good"
+      },
+      {
+       "id": 1224,
+       "amount": "$70.18",
+       "sub": "Sun 06-07 · delivered",
+       "tone": "good"
+      }
+     ]
+    },
+    "report": {
+     "count": "4 days rebuilt",
+     "cards": [
+      {
+       "id": "Fri 06-05",
+       "amount": "$971.04",
+       "sub": "37 orders · was $976.82",
+       "tone": "changed"
+      },
+      {
+       "id": "Sat 06-06",
+       "amount": "$786.71",
+       "sub": "33 orders · equals the truth",
+       "tone": "good"
+      },
+      {
+       "id": "Sun 06-07",
+       "amount": "$807.11",
+       "sub": "30 orders · equals the truth",
+       "tone": "good"
+      },
+      {
+       "id": "Mon 06-08",
+       "amount": "$591.75",
+       "sub": "25 orders · equals the truth",
+       "tone": "good"
+      }
+     ]
+    }
+   },
+   "moves": [
+    {
+     "from": "orders",
+     "to": "report"
+    }
+   ],
+   "follow": {
+    "1130": "Its refund lowers Fri 06-05 by $5.78. The pipeline names it as the reason.",
+    "1244": "It is counted as a live order of Monday. That is what the source says so far.",
+    "1356": "Not placed yet."
+   }
+  },
+  {
+   "id": "again",
+   "active": "orders",
+   "rerun": true,
+   "fix": true,
+   "clock": "Tue 06-09, 07:05",
+   "title": "Run it again: nothing changes",
+   "text": "The same morning, a second time. It reads 62 rows and lands them raw. The merge inserts 0 and updates 0: every row is a version the table already holds. The clean table and the report are identical to before.",
+   "word": {
+    "term": "Idempotent",
+    "meaning": "Two runs leave the same result as one run."
+   },
+   "stages": {
+    "api": {
+     "count": "251 orders",
+     "cards": [
+      {
+       "id": 1130,
+       "amount": "$8.97",
+       "sub": "changed 06-08 16:00Z · delivered",
+       "tone": "changed"
+      },
+      {
+       "id": 1224,
+       "amount": "$70.18",
+       "sub": "changed 06-08 15:25Z · delivered",
+       "tone": "changed"
+      }
+     ]
+    },
+    "extract": {
+     "count": "62 rows, again",
+     "cards": [
+      {
+       "id": 1130,
+       "amount": "$8.97",
+       "sub": "changed 06-08 16:00Z · delivered",
+       "tone": ""
+      },
+      {
+       "id": 1224,
+       "amount": "$70.18",
+       "sub": "changed 06-08 15:25Z · delivered",
+       "tone": ""
+      }
+     ]
+    },
+    "raw": {
+     "count": "390 rows · 251 orders",
+     "cards": [
+      {
+       "id": 1130,
+       "amount": "$14.75",
+       "sub": "run 06-08_1 · delivered",
+       "tone": "changed"
+      },
+      {
+       "id": 1130,
+       "amount": "$8.97",
+       "sub": "run 06-09_1 · delivered",
+       "tone": "changed"
+      },
+      {
+       "id": 1130,
+       "amount": "$8.97",
+       "sub": "run 06-09_2 · delivered",
+       "tone": "changed"
+      },
+      {
+       "id": 1224,
+       "amount": "$70.18",
+       "sub": "run 06-08_1 · placed",
+       "tone": "changed"
+      },
+      {
+       "id": 1224,
+       "amount": "$70.18",
+       "sub": "run 06-09_1 · delivered",
+       "tone": "changed"
+      },
+      {
+       "id": 1224,
+       "amount": "$70.18",
+       "sub": "run 06-09_2 · delivered",
+       "tone": "changed"
+      }
+     ]
+    },
+    "orders": {
+     "count": "251 rows · unchanged",
+     "cards": [
+      {
+       "id": 1130,
+       "amount": "$8.97",
+       "sub": "Fri 06-05 · delivered",
+       "tone": "good"
+      },
+      {
+       "id": 1224,
+       "amount": "$70.18",
+       "sub": "Sun 06-07 · delivered",
+       "tone": "good"
+      }
+     ]
+    },
+    "report": {
+     "count": "unchanged",
+     "cards": [
+      {
+       "id": "Mon 06-08",
+       "amount": "$591.75",
+       "sub": "25 orders · equals the truth",
+       "tone": "good"
+      },
+      {
+       "id": "Sun 06-07",
+       "amount": "$807.11",
+       "sub": "30 orders · equals the truth",
+       "tone": "good"
+      },
+      {
+       "id": "Fri 06-05",
+       "amount": "$971.04",
+       "sub": "37 orders · equals the truth",
+       "tone": "good"
+      }
+     ]
+    }
+   },
+   "moves": [
+    {
+     "from": "api",
+     "to": "extract"
+    },
+    {
+     "from": "extract",
+     "to": "raw"
+    },
+    {
+     "from": "raw",
+     "to": "orders"
+    }
+   ],
+   "follow": {
+    "1130": "It is read again. It is the version the table holds, so nothing happens.",
+    "1244": "Read again, left alone.",
+    "1356": "Not placed yet."
+   }
+  },
+  {
+   "id": "late",
+   "active": "extract",
+   "fix": true,
+   "clock": "Wed 06-10, 07:00",
+   "title": "A late change is caught",
+   "text": "Order 1244 was refused at the door on Monday at 21:35. The driver's phone was offline, so the API showed it on Tuesday, after that morning's run. Its updated_at, 06-09 02:35Z, is before the watermark. The lookback still reaches it: Mon 06-08 loses 1 order and $18.26.",
+   "word": {
+    "term": "Late row",
+    "meaning": "A row that reaches the source after the window that should have caught it."
+   },
+   "stages": {
+    "api": {
+     "count": "the source",
+     "cards": [
+      {
+       "id": 1244,
+       "amount": "$18.26",
+       "sub": "changed 06-09 02:35Z · cancelled",
+       "tone": "changed"
+      }
+     ]
+    },
+    "extract": {
+     "count": "since 06-07 04:17Z",
+     "cards": [
+      {
+       "id": "watermark",
+       "amount": "06-09 04:17Z",
+       "sub": "the change is before it",
+       "tone": "bad"
+      },
+      {
+       "id": "lookback",
+       "amount": "06-07 04:17Z",
+       "sub": "the change is after it",
+       "tone": "good"
+      }
+     ]
+    },
+    "raw": {
+     "count": "order 1244, every version",
+     "cards": [
+      {
+       "id": 1244,
+       "amount": "$18.26",
+       "sub": "run 06-09_1 · out_for_delivery",
+       "tone": "changed"
+      },
+      {
+       "id": 1244,
+       "amount": "$18.26",
+       "sub": "run 06-09_2 · out_for_delivery",
+       "tone": "changed"
+      },
+      {
+       "id": 1244,
+       "amount": "$18.26",
+       "sub": "run 06-10_1 · cancelled",
+       "tone": "changed"
+      }
+     ]
+    },
+    "orders": {
+     "count": "one row, cancelled",
+     "cards": [
+      {
+       "id": 1244,
+       "amount": "$18.26",
+       "sub": "Mon 06-08 · cancelled",
+       "tone": "good"
+      }
+     ]
+    },
+    "report": {
+     "count": "corrected",
+     "cards": [
+      {
+       "id": "Mon 06-08",
+       "amount": "$573.49",
+       "sub": "24 orders · was $591.75",
+       "tone": "changed"
+      }
+     ]
+    }
+   },
+   "moves": [
+    {
+     "from": "api",
+     "to": "extract"
+    },
+    {
+     "from": "raw",
+     "to": "orders"
+    }
+   ],
+   "follow": {
+    "1130": "Not touched by this run's changes.",
+    "1244": "Its late cancellation is inside the lookback. The row is updated to 'cancelled', and Mon 06-08 is corrected.",
+    "1356": "Not placed yet."
+   }
+  },
+  {
+   "id": "repeated_page",
+   "active": "orders",
+   "fix": true,
+   "clock": "Thu 06-11, 07:00",
+   "title": "The API serves one page twice",
+   "text": "120 rows land for 95 orders. A merge refuses the same key twice, so the pipeline first keeps one row per order: the newest. Then it merges. The clean table holds 317 rows for 317 orders.",
+   "word": {
+    "term": "Dedupe key",
+    "meaning": "The key you keep one row per, when the same thing arrived more than once. Here: order_id."
+   },
+   "stages": {
+    "api": {
+     "count": "one page, twice",
+     "cards": []
+    },
+    "extract": {
+     "count": "120 rows · 5 calls",
+     "cards": []
+    },
+    "raw": {
+     "count": "120 rows this run",
+     "cards": []
+    },
+    "orders": {
+     "count": "317 rows = 317 orders",
+     "cards": [
+      {
+       "id": "landed",
+       "amount": "120",
+       "sub": "rows in this run",
+       "tone": "changed"
+      },
+      {
+       "id": "staged",
+       "amount": "95",
+       "sub": "one row per order_id",
+       "tone": "good"
+      },
+      {
+       "id": "inserted",
+       "amount": "35",
+       "sub": "new orders",
+       "tone": ""
+      },
+      {
+       "id": "updated",
+       "amount": "2",
+       "sub": "a newer version",
+       "tone": ""
+      }
+     ]
+    },
+    "report": {
+     "count": "right",
+     "cards": [
+      {
+       "id": "Wed 06-10",
+       "amount": "$875.89",
+       "sub": "35 orders · equals the truth",
+       "tone": "good"
+      },
+      {
+       "id": "Tue 06-09",
+       "amount": "$714.80",
+       "sub": "31 orders · equals the truth",
+       "tone": "good"
+      }
+     ]
+    }
+   },
+   "moves": [
+    {
+     "from": "extract",
+     "to": "raw"
+    },
+    {
+     "from": "raw",
+     "to": "orders"
+    }
+   ],
+   "follow": {
+    "1130": "Still one row.",
+    "1244": "One row, cancelled.",
+    "1356": "Not placed yet. It is ordered on Friday 12 June."
+   }
+  },
+  {
+   "id": "exactly_once",
+   "active": "report",
+   "fix": true,
+   "clock": "Thu 06-11, 07:00",
+   "title": "Rows arrive more than once. Each one counts once",
+   "text": "After five runs the raw table holds 603 rows for 317 orders. Rows were re-read by the lookback, by a second run and by a repeated page. The report equals the truth on every day. The delivery is at-least-once. The write is idempotent. The result is exactly-once.",
+   "word": {
+    "term": "Exactly-once",
+    "meaning": "Each row changes the result one time. It is at-least-once delivery plus an idempotent write."
+   },
+   "stages": {
+    "api": {
+     "count": "317 orders",
+     "cards": []
+    },
+    "extract": {
+     "count": "at-least-once",
+     "cards": []
+    },
+    "raw": {
+     "count": "603 rows · 317 orders",
+     "cards": [
+      {
+       "id": 1130,
+       "amount": "$8.97",
+       "sub": "run 06-09_2 · delivered",
+       "tone": "changed"
+      },
+      {
+       "id": 1130,
+       "amount": "$8.97",
+       "sub": "run 06-10_1 · delivered",
+       "tone": "changed"
+      },
+      {
+       "id": 1130,
+       "amount": "$8.97",
+       "sub": "run 06-11_1 · delivered",
+       "tone": "changed"
+      }
+     ]
+    },
+    "orders": {
+     "count": "317 rows = 317 orders",
+     "cards": [
+      {
+       "id": 1130,
+       "amount": "$8.97",
+       "sub": "Fri 06-05 · delivered",
+       "tone": "good"
+      },
+      {
+       "id": 1244,
+       "amount": "$18.26",
+       "sub": "Mon 06-08 · cancelled",
+       "tone": "good"
+      }
+     ]
+    },
+    "report": {
+     "count": "every day right",
+     "cards": [
+      {
+       "id": "Wed 06-10",
+       "amount": "$875.89",
+       "sub": "35 orders · equals the truth",
+       "tone": "good"
+      },
+      {
+       "id": "Mon 06-08",
+       "amount": "$573.49",
+       "sub": "24 orders · equals the truth",
+       "tone": "good"
+      },
+      {
+       "id": "Fri 06-05",
+       "amount": "$971.04",
+       "sub": "37 orders · equals the truth",
+       "tone": "good"
+      }
+     ]
+    }
+   },
+   "moves": [],
+   "follow": {
+    "1130": "It arrived several times and changed the report once.",
+    "1244": "A late change, read once it arrived, counted once.",
+    "1356": "Not placed yet."
+   }
+  },
+  {
+   "id": "deleted",
+   "active": "orders",
+   "fix": true,
+   "clock": "Sun 06-14, 07:00",
+   "title": "An order vanishes from the source",
+   "text": "Test order 1356 was deleted on Saturday. A deleted row has no updated_at, so the query can never return it. The pipeline reads the source's change feed, finds the delete, and marks the row. Fri 06-12 loses 1 order and $14.24. The row is kept.",
+   "word": {
+    "term": "Soft delete",
+    "meaning": "Keep the row and mark it as deleted. A hard delete removes the row for good."
+   },
+   "stages": {
+    "api": {
+     "count": "the source",
+     "cards": [
+      {
+       "id": 1356,
+       "amount": "gone",
+       "sub": "deleted from the source",
+       "tone": "bad"
+      }
+     ]
+    },
+    "extract": {
+     "count": "change feed",
+     "cards": [
+      {
+       "id": 1356,
+       "amount": "op d",
+       "sub": "a delete, from the feed",
+       "tone": "changed"
+      }
+     ]
+    },
+    "raw": {
+     "count": "order 1356, as landed",
+     "cards": [
+      {
+       "id": 1356,
+       "amount": "$14.24",
+       "sub": "run 06-13_1 · placed",
+       "tone": ""
+      }
+     ]
+    },
+    "orders": {
+     "count": "kept, and marked",
+     "cards": [
+      {
+       "id": 1356,
+       "amount": "$14.24",
+       "sub": "Fri 06-12 · marked deleted",
+       "tone": "changed"
+      }
+     ]
+    },
+    "report": {
+     "count": "not counted",
+     "cards": [
+      {
+       "id": "Fri 06-12",
+       "amount": "$690.50",
+       "sub": "25 orders · was $704.74",
+       "tone": "changed"
+      }
+     ]
+    }
+   },
+   "moves": [
+    {
+     "from": "extract",
+     "to": "orders"
+    },
+    {
+     "from": "orders",
+     "to": "report"
+    }
+   ],
+   "follow": {
+    "1130": "Still one row.",
+    "1244": "One row, cancelled.",
+    "1356": "Loaded on Saturday morning, deleted from the source that day. Now marked, kept, and not counted."
+   }
+  },
+  {
+   "id": "rebuild",
+   "active": "report",
+   "fix": true,
+   "clock": "Sun 06-14, 09:00",
+   "title": "Someone breaks Friday. Friday is rebuilt, alone",
+   "text": "A number is edited by hand, and Fri 06-05 shows $625.52. One command deletes that day's rows and builds them again from the clean table. Friday is right again, and no other day was touched.",
+   "word": {
+    "term": "Reprocessing",
+    "meaning": "Building a past slice again, to correct it. Here: one day of the report."
+   },
+   "stages": {
+    "api": {
+     "count": "",
+     "cards": []
+    },
+    "extract": {
+     "count": "",
+     "cards": []
+    },
+    "raw": {
+     "count": "",
+     "cards": []
+    },
+    "orders": {
+     "count": "the source of the rebuild",
+     "cards": [
+      {
+       "id": 1130,
+       "amount": "$8.97",
+       "sub": "Fri 06-05 · delivered",
+       "tone": "good"
+      }
+     ]
+    },
+    "report": {
+     "count": "1 day rebuilt",
+     "cards": [
+      {
+       "id": "Fri 06-05",
+       "amount": "$971.04",
+       "sub": "37 orders · was $625.52",
+       "tone": "changed"
+      },
+      {
+       "id": "Thu 06-04",
+       "amount": "$591.98",
+       "sub": "30 orders · equals the truth",
+       "tone": "good"
+      },
+      {
+       "id": "Sat 06-06",
+       "amount": "$786.71",
+       "sub": "33 orders · equals the truth",
+       "tone": "good"
+      }
+     ]
+    }
+   },
+   "moves": [
+    {
+     "from": "orders",
+     "to": "report"
+    }
+   ],
+   "follow": {
+    "1130": "The rebuild of Friday reads its one row and counts it once.",
+    "1244": "Not part of Friday.",
+    "1356": "Not part of Friday 5 June."
+   }
+  },
+  {
+   "id": "still_wrong",
+   "active": "orders",
+   "problem": true,
+   "clock": "Sun 06-14, 09:00",
+   "title": "Still wrong: nothing checks the tables",
+   "text": "The numbers are right on every morning. But every rule is SQL inside a Python string, in one script. And the tests check the code on test data. Nothing looks at the tables after this morning's real run. If the source sent a negative total tomorrow, the report would add it up. Milestone 4 moves the SQL into models and puts tests on the tables.",
+   "word": {
+    "term": "Safe re-run",
+    "meaning": "A run you can repeat without fear. It is what an idempotent pipeline gives you."
+   },
+   "stages": {
+    "api": {
+     "count": "398 orders",
+     "cards": []
+    },
+    "extract": {
+     "count": "safe from loss",
+     "cards": []
+    },
+    "raw": {
+     "count": "889 rows",
+     "cards": []
+    },
+    "orders": {
+     "count": "399 rows · nobody checks them",
+     "cards": [
+      {
+       "id": 1130,
+       "amount": "$8.97",
+       "sub": "Fri 06-05 · delivered",
+       "tone": ""
+      },
+      {
+       "id": 1244,
+       "amount": "$18.26",
+       "sub": "Mon 06-08 · cancelled",
+       "tone": ""
+      },
+      {
+       "id": 1356,
+       "amount": "$14.24",
+       "sub": "Fri 06-12 · marked deleted",
+       "tone": ""
+      }
+     ]
+    },
+    "report": {
+     "count": "right today",
+     "cards": [
+      {
+       "id": "Sat 06-13",
+       "amount": "$702.57",
+       "sub": "26 orders · equals the truth",
+       "tone": "good"
+      },
+      {
+       "id": "Fri 06-12",
+       "amount": "$690.50",
+       "sub": "25 orders · equals the truth",
+       "tone": "good"
+      }
+     ]
+    }
+   },
+   "moves": [],
+   "follow": {
+    "1130": "One order, one row. Nobody checks that it stays so.",
+    "1244": "One row, cancelled, and right.",
+    "1356": "Its row stays in the warehouse with is_deleted = true."
+   }
+  }
+ ],
+ "still_wrong": "All the logic is in one script. Nothing checks the tables. Nobody knows when the number is wrong.",
+ "next": "Milestone 4: models and tests."
+}
+</script>
+<script>
+(function () {
+  'use strict';
+
+  var DATA = JSON.parse(document.getElementById('page-data').textContent);
+  var STEP_MS = 7000;
+  var $ = function (id) { return document.getElementById(id); };
+  var reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var state = { step: 0, follow: DATA.cases[0].id, playing: false };
+  var timer = null, stageEls = {};
+
+  function el(tag, cls, text) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text != null) e.textContent = text;
+    return e;
+  }
+
+  // ---- Build the page once ---------------------------------------------------
+
+  $('eyebrow').textContent = 'Milestone ' + DATA.milestone + ' of ' + DATA.of + ' · the whole pipeline';
+  $('title').textContent = DATA.title;
+  $('lede').textContent = DATA.lede;
+  $('wrong-text').textContent = DATA.still_wrong + ' Next: ' + DATA.next;
+
+  var BADGES = { given: 'the source', 'new': 'new', built: 'built', not_yet: 'not yet', by_hand: 'by hand' };
+
+  DATA.stages.forEach(function (s) {
+    var ghost = s.state === 'not_yet';
+    var box = el('section', 'stage' + (ghost ? ' ghost' : ''));
+    box.setAttribute('aria-label', s.name);
+    box.appendChild(el('span', 'role', s.role));
+    box.appendChild(el('span', 'name', s.name));
+    box.appendChild(el('span', 'badge' + (s.state === 'new' ? ' new' : ''), s.badge || BADGES[s.state]));
+    var count = el('div', 'count'), cards = el('div', 'cards');
+    if (ghost) box.appendChild(el('p', 'ghost-note', s.note));
+    else { box.appendChild(count); box.appendChild(cards); }
+    $('lane').appendChild(box);
+    stageEls[s.id] = { box: box, count: count, cards: cards, ghost: ghost, name: s.name };
+  });
+
+  [['band-schedule', DATA.schedule], ['band-tests', DATA.tests]].forEach(function (pair) {
+    var band = $(pair[0]);
+    band.querySelector('b').textContent = BADGES[pair[1].state];
+    band.lastElementChild.textContent = pair[1].text;
+    if (pair[1].state === 'built' || pair[1].state === 'new') band.style.borderStyle = 'solid';
+  });
+
+  DATA.cases.forEach(function (c) {
+    var b = el('button', 'pick');
+    b.type = 'button';
+    b.dataset.id = c.id;
+    b.appendChild(el('b', null, c.label));
+    b.appendChild(el('small', null, c.hint));
+    b.addEventListener('click', function () { state.follow = c.id; render(false); });
+    $('picks').appendChild(b);
+  });
+
+  // ---- Rendering -------------------------------------------------------------
+
+  function renderCards(target, cards) {
+    target.textContent = '';
+    cards.forEach(function (c) {
+      var card = el('div', 'card' + (c.tone ? ' ' + c.tone : '') + (String(c.id) === state.follow ? ' followed' : ''));
+      card.appendChild(el('b', null, typeof c.id === 'number' ? '#' + c.id : c.id));
+      card.appendChild(el('span', 'amt', c.amount));
+      card.appendChild(el('span', 'sub', c.sub));
+      target.appendChild(card);
+    });
+  }
+
+  function fly(step) {
+    if (reduceMotion || !step.moves.length) return;
+    var diagram = $('diagram'), base = diagram.getBoundingClientRect();
+    step.moves.forEach(function (move, m) {
+      var from = stageEls[move.from].box.getBoundingClientRect();
+      var to = stageEls[move.to].box.getBoundingClientRect();
+      var cards = (step.stages[move.to] || {}).cards || [];
+      var ids = cards.filter(function (c) { return typeof c.id === 'number'; }).map(function (c) { return '#' + c.id; });
+      if (!ids.length) ids = ['rows', 'rows', 'rows'];
+      ids.slice(0, 6).forEach(function (label, i) {
+        var chip = el('span', 'fly', label);
+        var x0 = from.left - base.left + from.width / 2 - 24, y0 = from.top - base.top + 90 + i * 22;
+        var x1 = to.left - base.left + to.width / 2 - 24, y1 = to.top - base.top + 90 + i * 22;
+        chip.style.transform = 'translate(' + x0 + 'px,' + y0 + 'px)';
+        diagram.appendChild(chip);
+        setTimeout(function () {
+          chip.style.opacity = '1';
+          chip.style.transform = 'translate(' + x1 + 'px,' + y1 + 'px)';
+        }, 60 + m * 500 + i * 90);
+        setTimeout(function () { chip.style.opacity = '0'; }, 1000 + m * 500 + i * 90);
+        setTimeout(function () { chip.remove(); }, 1500 + m * 500 + i * 90);
+      });
+    });
+  }
+
+  function render(animate) {
+    var step = DATA.steps[state.step], n = DATA.steps.length;
+    var mood = step.problem ? 'problem' : (step.fix ? 'fix' : '');
+
+    DATA.stages.forEach(function (s) {
+      var parts = stageEls[s.id];
+      parts.box.classList.toggle('active', s.id === step.active);
+      parts.box.classList.toggle('problem', s.id === step.active && !!step.problem);
+      parts.box.classList.toggle('fix', s.id === step.active && !!step.fix);
+      if (parts.ghost) return;
+      var now = step.stages[s.id] || { count: '', cards: [] };
+      parts.count.textContent = now.count;
+      renderCards(parts.cards, now.cards);
+    });
+
+    $('detail').className = 'panel' + (mood ? ' ' + mood : '');
+    $('d-kicker').textContent = (step.problem ? 'The problem · ' : step.fix ? 'The fix · ' : '') +
+      'Step ' + (state.step + 1) + ' of ' + n + ' · ' + stageEls[step.active].name;
+    $('d-title').textContent = step.title;
+    $('d-text').textContent = step.text;
+    $('w-term').textContent = step.word.term;
+    $('w-meaning').textContent = step.word.meaning;
+
+    var chosen = DATA.cases.filter(function (c) { return c.id === state.follow; })[0];
+    $('f-title').textContent = chosen.label + ': ' + chosen.hint;
+    $('f-text').textContent = step.follow[state.follow];
+    Array.prototype.forEach.call($('picks').children, function (b) {
+      b.setAttribute('aria-pressed', String(b.dataset.id === state.follow));
+    });
+
+    $('clock').textContent = step.clock;
+    $('progress-text').textContent = 'Step ' + (state.step + 1) + ' of ' + n;
+    $('bar').style.width = ((state.step + 1) / n * 100) + '%';
+    $('back').disabled = state.step === 0;
+    $('next').disabled = state.step === n - 1;
+    $('play').textContent = state.playing ? 'Pause' : (state.step === n - 1 ? 'Replay' : 'Play');
+    $('detail').setAttribute('aria-live', state.playing ? 'off' : 'polite');
+    if (animate) fly(step);
+  }
+
+  // ---- Actions ---------------------------------------------------------------
+
+  function go(index) { state.step = index; render(true); schedule(); }
+  function move(delta) {
+    var index = state.step + delta;
+    if (index < 0 || index >= DATA.steps.length) return false;
+    go(index);
+    return true;
+  }
+  function schedule() {
+    clearTimeout(timer);
+    if (!state.playing) return;
+    timer = setTimeout(function () {
+      if (!move(1)) { state.playing = false; render(false); }
+    }, STEP_MS);
+  }
+  function pause() { state.playing = false; clearTimeout(timer); }
+  function togglePlay() {
+    if (state.playing) { pause(); render(false); return; }
+    state.playing = true;
+    if (state.step === DATA.steps.length - 1) go(0); else { render(false); schedule(); }
+  }
+
+  $('back').addEventListener('click', function () { pause(); move(-1); render(false); });
+  $('next').addEventListener('click', function () { pause(); move(1); render(false); });
+  $('restart').addEventListener('click', function () { pause(); go(0); });
+  $('play').addEventListener('click', togglePlay);
+  $('again').addEventListener('click', function () {
+    // Jump to the step that runs the same morning a second time.
+    var index = DATA.steps.findIndex(function (s) { return s.rerun; });
+    pause();
+    go(index === -1 ? 0 : index);
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.key === 'ArrowRight') { pause(); move(1); render(false); }
+    if (e.key === 'ArrowLeft') { pause(); move(-1); render(false); }
+    if (e.key === ' ' && !e.target.closest('button')) { e.preventDefault(); togglePlay(); }
+  });
+
+  // A link can open the page at one step: milestone_3_flow.html#step=8&follow=1130
+  (location.hash.slice(1).split('&')).forEach(function (part) {
+    var pair = part.split('=');
+    if (pair[0] === 'step' && DATA.steps[pair[1] - 1]) state.step = pair[1] - 1;
+    if (pair[0] === 'follow' && DATA.cases.some(function (c) { return c.id === pair[1]; })) state.follow = pair[1];
+  });
+
+  render(false);
+})();
+</script>
+</body>
+</html>

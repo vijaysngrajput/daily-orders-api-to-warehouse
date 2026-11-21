@@ -1,0 +1,403 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Milestone 4 recap: Models and tests</title>
+<style>
+  :root {
+    color-scheme: light;
+    --bg: #f6f4ef; --surface: #fffdf9; --ink: #1d2327; --muted: #5c6670; --line: #d9d4c8;
+    --accent: #0f6b5c; --accent-ink: #ffffff; --accent-soft: #dcefe9;
+    --neg: #a23b2a; --neg-soft: #f6e1dc; --pos: #1f6f43; --pos-soft: #dff0e5;
+    --warn: #8a5a00; --warn-soft: #f7ebcf; --tag-bg: #ecebe4;
+    --shadow: 0 1px 2px rgba(29, 35, 39, .06), 0 6px 18px rgba(29, 35, 39, .06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --bg: #14181a; --surface: #1c2226; --ink: #e8e6e1; --muted: #9aa4ab; --line: #2e373c;
+      --accent: #5fc5b0; --accent-ink: #0d1f1c; --accent-soft: #1d3a35;
+      --neg: #e58a78; --neg-soft: #3a2420; --pos: #7fd0a0; --pos-soft: #1d3527;
+      --warn: #e2b85c; --warn-soft: #3a3019; --tag-bg: #262e33;
+      --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 6px 18px rgba(0, 0, 0, .25);
+    }
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15.5px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  .page { max-width: 980px; margin: 0 auto; padding: 36px 24px 64px; }
+  .eyebrow { margin: 0 0 6px; font-size: 12px; font-weight: 600; letter-spacing: .09em; text-transform: uppercase; color: var(--accent); }
+  h1 { margin: 0 0 8px; font: 600 38px/1.12 "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif; text-wrap: balance; }
+  h2 { margin: 0 0 6px; font: 600 26px/1.2 "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif; text-wrap: balance; }
+  h3 { margin: 0 0 4px; font-size: 16px; }
+  p { margin: 0 0 12px; }
+  .lede { max-width: 62ch; color: var(--muted); font-size: 17px; }
+  .num { font-variant-numeric: tabular-nums; }
+  a { color: var(--accent); }
+
+  /* Jump links */
+  .nav { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; gap: 6px; margin: 22px -8px 0; padding: 10px 8px; background: var(--bg); border-bottom: 1px solid var(--line); }
+  .nav a { padding: 4px 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--ink); font-size: 13.5px; font-weight: 500; text-decoration: none; }
+  .nav a:hover, .nav a.on { border-color: var(--accent); }
+  .nav a.on { background: var(--accent); color: var(--accent-ink); }
+  a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  section { padding: 44px 0 6px; scroll-margin-top: 56px; }
+  .kicker { margin: 0 0 6px; font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+
+  /* Things slide up as they come into view. They are never hidden, so the page reads without JavaScript. */
+  .js .rise { opacity: .25; transform: translateY(14px); transition: opacity .6s ease, transform .6s ease; }
+  .js .rise.in { opacity: 1; transform: none; }
+
+  .tiles { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; margin-top: 22px; }
+  .tile { padding: 14px 12px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; text-align: center; }
+  .tile b { display: block; font: 600 30px/1.1 "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif; font-variant-numeric: tabular-nums; }
+  .tile span { color: var(--muted); font-size: 13px; }
+
+  blockquote { margin: 14px 0 18px; padding: 14px 18px; border-left: 4px solid var(--accent); background: var(--surface); border-radius: 0 12px 12px 0; font: 500 18px/1.45 "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif; }
+  .answers { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+  .card { padding: 14px 16px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; }
+  .card .q { color: var(--muted); font-size: 13px; }
+  .card .a { display: block; margin: 4px 0 2px; font-size: 21px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .card small { color: var(--muted); }
+
+  /* The pipeline, drawn small */
+  .pipe { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 20px; margin: 16px 0 12px; }
+  .box { position: relative; padding: 12px; background: var(--surface); border: 2px solid var(--line); border-radius: 12px; transition: border-color .4s, box-shadow .4s; }
+  .box + .box::before { content: "\2192"; position: absolute; left: -17px; top: 16px; color: var(--muted); }
+  .box.ghost { border-style: dashed; background: transparent; color: var(--muted); }
+  .box.lit { border-color: var(--accent); box-shadow: var(--shadow); }
+  .box .role { font-size: 10.5px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+  .box b { display: block; line-height: 1.25; }
+  .box > span:not(.role) { display: block; margin-top: 6px; color: var(--muted); font-size: 13px; }
+  .box .n { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .btn { padding: 7px 14px; font: inherit; font-weight: 500; color: var(--bg); background: var(--ink); border: 1px solid var(--ink); border-radius: 8px; cursor: pointer; }
+  .hand { margin-top: 10px; padding: 9px 12px; border: 2px dashed var(--line); border-radius: 12px; color: var(--muted); font-size: 13.5px; }
+
+  .versus { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .versus .bad { border-color: var(--neg); background: var(--neg-soft); }
+  .versus .good { border-color: var(--pos); background: var(--pos-soft); }
+  .versus .bad h3 { color: var(--neg); }
+  .versus .good h3 { color: var(--pos); }
+  .meter { height: 10px; margin: 8px 0 4px; border-radius: 5px; background: var(--tag-bg); overflow: hidden; }
+  .meter i { display: block; height: 100%; width: 0; border-radius: 5px; background: currentColor; transition: width 1s ease; }
+  .bad .meter { color: var(--neg); } .good .meter { color: var(--pos); }
+
+  ol.learned { margin: 12px 0 0; padding: 0; list-style: none; counter-reset: n; display: grid; gap: 10px; }
+  ol.learned li { counter-increment: n; position: relative; padding: 12px 16px 12px 56px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; }
+  ol.learned li::before { content: counter(n); position: absolute; left: 14px; top: 12px; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: var(--accent); color: var(--accent-ink); font-weight: 600; }
+  ol.learned b { display: block; }
+  ol.learned span { color: var(--muted); }
+
+  .words { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 12px; }
+  .word { padding: 12px 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; }
+  .word b { color: var(--accent); }
+  .word span { display: block; font-size: 14px; }
+  .word small { color: var(--muted); }
+
+  /* The chart of API calls */
+  .chart { display: grid; gap: 8px; margin: 16px 0 6px; padding: 18px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; }
+  .chart-row { display: grid; grid-template-columns: 88px minmax(0, 1fr) 150px; gap: 12px; align-items: center; font-size: 14px; font-variant-numeric: tabular-nums; }
+  .track { position: relative; height: 22px; border-radius: 6px; background: var(--tag-bg); }
+  .track i { display: block; height: 100%; width: 0; border-radius: 6px; background: var(--accent); transition: width 1s ease; }
+  .chart-row.over .track i { background: var(--neg); }
+  .chart-row.over .what { color: var(--neg); font-weight: 600; }
+  .limit { position: absolute; top: -5px; bottom: -5px; width: 2px; background: var(--ink); }
+  .chart .legend { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
+  .wrong { margin-top: 14px; padding: 16px 20px; border: 1px solid var(--neg); border-radius: 12px; background: var(--neg-soft); }
+  .wrong b { display: block; color: var(--neg); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; }
+  .wrong span { font: 600 20px/1.35 "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif; }
+
+  pre { margin: 8px 0 0; padding: 12px 14px; overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  .setup { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  .next { margin-top: 14px; padding: 18px 20px; background: var(--accent-soft); border: 1px solid var(--accent); border-radius: 12px; }
+  .foot { margin: 40px 0 0; padding-top: 16px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; }
+
+  @media (max-width: 760px) {
+    .page { padding: 24px 16px 48px; }
+    h1 { font-size: 29px; } h2 { font-size: 22px; }
+    .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .answers, .versus, .words, .setup { grid-template-columns: minmax(0, 1fr); }
+    .pipe { grid-template-columns: minmax(0, 1fr); gap: 24px; }
+    .box + .box::before { content: "\2193"; left: 16px; top: -22px; }
+    .chart-row { grid-template-columns: 76px minmax(0, 1fr); }
+    .chart-row .what { grid-column: 2; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+    .js .rise { opacity: 1; transform: none; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+  <header>
+    <p class="eyebrow">Milestone 4 of 5 · recap</p>
+    <h1>Models and tests</h1>
+    <p class="lede">The rules of the report moved out of Python into SQL models that anyone can read. Every table is now tested after every run, and a failed test stops a wrong number from reaching the manager.</p>
+    <div class="tiles">
+      <div class="tile rise"><b class="num" data-k="numbers.notebooks" data-count></b><span>lab notebooks</span></div>
+      <div class="tile rise"><b class="num" data-k="numbers.tests" data-count></b><span>pytest tests</span></div>
+      <div class="tile rise"><b class="num" data-k="numbers.tables" data-count></b><span>dbt models and seeds</span></div>
+      <div class="tile rise"><b class="num" data-k="numbers.rows" data-count></b><span>tests on the tables</span></div>
+      <div class="tile rise"><b class="num" data-k="numbers.words" data-count></b><span>new words</span></div>
+    </div>
+  </header>
+
+  <nav class="nav" aria-label="Sections">
+    <a href="#asked">1. Asked</a>
+    <a href="#built">2. Built</a>
+    <a href="#trap">3. A bad morning</a>
+    <a href="#learned">4. Learned</a>
+    <a href="#words">5. Words</a>
+    <a href="#wrong">6. Still wrong</a>
+    <a href="#setup">Set up</a>
+  </nav>
+
+  <section id="asked">
+    <p class="kicker">1 · What was asked</p>
+    <h2>Rules you can read, and tables that are checked</h2>
+    <p><b>Why this milestone exists.</b> After milestone 3 the numbers were right. But every rule lived in a Python string inside one script, and nothing looked at the tables after a run.</p>
+    <div class="answers" style="grid-template-columns:repeat(2,minmax(0,1fr))">
+      <div class="card rise"><span class="q">Finance asked</span><span class="a" style="font-size:17px">Where is the rule "a cancelled order is not a sale"?</span><small>Before: in program code. Now: in <code>daily_orders.sql</code>, one line of SQL</small></div>
+      <div class="card rise"><span class="q">The manager asked</span><span class="a" style="font-size:17px">How do I know today's number is right?</span><small>Before: you do not. Now: <span data-k="dbt.tests"></span> tests passed before you saw it</small></div>
+    </div>
+  </section>
+
+  <section id="built">
+    <p class="kicker">2 · What you built</p>
+    <h2>ELT: Python loads, dbt transforms and tests</h2>
+    <p>Python now only extracts and loads. It lands what arrived and stops. A dbt project builds everything after that, as SQL models in three layers.</p>
+    <div class="pipe" id="pipe">
+      <div class="box"><span class="role">Source</span><b>Order system API</b><span><span class="n" data-k="load.orders"></span> orders on Tuesday</span></div>
+      <div class="box"><span class="role">Ingest · Python</span><b>Extract and load</b><span><span class="n" data-k="load.read"></span> rows read and landed</span></div>
+      <div class="box"><span class="role">Store · raw layer</span><b>Raw landing table</b><span><span class="n" data-k="load.raw"></span> rows, as received</span></div>
+      <div class="box"><span class="role">dbt · staging, core</span><b>Clean orders table</b><span><span class="n" data-k="load.orders"></span> orders, <span data-k="load.items"></span> item lines</span></div>
+      <div class="box"><span class="role">dbt · mart</span><b>Daily report</b><span><span class="n" data-k="load.report_rows"></span> rows, newest days rebuilt</span></div>
+    </div>
+    <button class="btn" id="run" type="button">Run Tuesday's build</button>
+    <p class="hand"><b>Schedule: by hand.</b> A person starts every run. <b>Tests on the tables: <span data-k="dbt.tests"></span>, on every run.</b></p>
+    <div class="answers" style="grid-template-columns:repeat(3,minmax(0,1fr));margin-top:14px">
+      <div class="card rise"><span class="q">Staging · views</span><span class="a" style="font-size:17px">Clean it</span><small>Real types, one spelling, one row per order</small></div>
+      <div class="card rise"><span class="q">Core · tables</span><span class="a" style="font-size:17px">One row per real thing</span><small>An order with its city name. An item line</small></div>
+      <div class="card rise"><span class="q">Marts · incremental</span><span class="a" style="font-size:17px">What people read</span><small>The daily report. Only its newest days are rebuilt</small></div>
+    </div>
+    <p style="margin-top:14px"><b>The outcome.</b> The same numbers as before: <span data-k="monday.y"></span> has <span data-k="monday.orders"></span> orders and <span data-k="monday.money"></span>. A second run leaves the tables <span data-k="again.same"></span>. And when every clean table is dropped, one command builds <span data-k="rebuild.models"></span> models back from the raw data alone, <span data-k="rebuild.same"></span>. Open the <a href="milestone_4_flow.html">flow page</a> to watch it.</p>
+  </section>
+
+  <section id="trap">
+    <p class="kicker">3 · The test that earned its place</p>
+    <h2>A bad morning, stopped</h2>
+    <p>The order system sends order <span data-k="bad.order"></span> with a status nobody has ever seen: <code>teleported</code>.</p>
+    <div class="versus">
+      <div class="card bad rise"><h3>What failed</h3><span class="a" style="font-size:17px" data-k="bad.test"></span><small>One row outside the list of five statuses. The run stops and names the test.</small></div>
+      <div class="card good rise"><h3>What the manager saw</h3><span class="a" style="font-size:17px">The report <span data-k="bad.kept"></span></span><small>dbt skipped <code data-k="bad.skipped"></code>, because it depends on the table that failed.</small></div>
+    </div>
+    <p style="margin-top:12px">One more check catches data that is right but old. Just after a load, the freshness check says <b data-k="fresh.now"></b>. Three days without a load, and it says <b data-k="fresh.later"></b>.</p>
+  </section>
+
+  <section id="learned">
+    <p class="kicker">4 · What you learned</p>
+    <h2>Five things</h2>
+    <ol class="learned">
+      <li class="rise"><b>Load raw first, transform in the warehouse.</b><span>Then a wrong rule is a rebuild, not a new call to the source.</span></li>
+      <li class="rise"><b>Clean once, in staging. Then shape. Then add up.</b><span>Every model after staging can trust: real types, one spelling, one row per order.</span></li>
+      <li class="rise"><b>Count rows before and after every join.</b><span>An inner join can drop a city. A join to items can multiply your money by four.</span></li>
+      <li class="rise"><b>Test the tables, not only the code.</b><span>A table test is a query for rows that break a rule. It runs on this morning's real data.</span></li>
+      <li class="rise"><b>An old right number beats a new wrong one.</b><span>A failed test must stop the report, and say which rule broke.</span></li>
+    </ol>
+  </section>
+
+  <section id="words">
+    <p class="kicker">5 · New words</p>
+    <h2>Words you can now explain</h2>
+    <div class="words">
+      <div class="word rise"><b>ELT</b><span>Load the raw data, then transform it inside the warehouse.</span></div>
+      <div class="word rise"><b>Model</b><span>One SELECT in a file. dbt builds a table or a view from it.</span></div>
+      <div class="word rise"><b>Type casting and cleaning</b><span>Give each value its real type, and one spelling.</span></div>
+      <div class="word rise"><b>Deduplication</b><span>Keep one row per key: the newest.</span></div>
+      <div class="word rise"><b>Join and enrichment</b><span>Put two tables side by side where a key matches. Add columns from another table.</span></div>
+      <div class="word rise"><b>Row-by-row and set-based</b><span>Visit one row at a time. Or say what you want from all the rows together.</span></div>
+      <div class="word rise"><b>Staging, core, mart</b><span>Three layers: clean it, one row per real thing, what people read.</span></div>
+      <div class="word rise"><b>Incremental model</b><span>A model that rebuilds only part of its table.</span></div>
+      <div class="word rise"><b>Table test</b><span>A query that returns the rows that break a rule. No rows means a pass.</span></div>
+      <div class="word rise"><b>Freshness</b><span>Is the newest loaded row recent enough?</span></div>
+    </div>
+    <p style="margin-top:12px">Each word has an interview line in the project's <a href="https://github.com/vijaysngrajput/daily-orders-api-to-warehouse/blob/main/GLOSSARY.md">glossary</a>.</p>
+  </section>
+
+  <section id="wrong">
+    <p class="kicker">6 · What is still wrong</p>
+    <h2>It only runs when someone runs it</h2>
+    <p>The pipeline is right, safe to repeat, and checked. Every run in this milestone still started with a person typing a command.</p>
+    <div class="answers" style="grid-template-columns:repeat(3,minmax(0,1fr))">
+      <div class="card rise"><span class="q">Every morning at 07:00</span><span class="a" style="font-size:17px">Someone must run it</span><small>No report on the day they are ill</small></div>
+      <div class="card rise"><span class="q">The order system is down at 07:00</span><span class="a" style="font-size:17px">Someone must try again</span><small>If they notice</small></div>
+      <div class="card rise"><span class="q">A week was missed</span><span class="a" style="font-size:17px">Someone must run seven days</span><small>One by one, by hand</small></div>
+    </div>
+    <div class="wrong rise" style="margin-top:14px"><b>Still wrong</b><span>A person must remember to run it every morning.</span></div>
+    <div class="next rise"><b>Next: milestone 5, on a schedule.</b> One Airflow DAG: extract, load, transform, test. It runs daily, retries a failed API call, and can backfill any range of past days with one command.</div>
+  </section>
+
+  <section id="setup">
+    <p class="kicker">Set up</p>
+    <h2>What is new to install: nothing by hand</h2>
+    <p>dbt is new in this milestone. <code>uv sync</code> installs it into the project's virtual environment: dbt-core 1.12 with the Postgres adapter 1.11. Docker still runs the warehouse.</p>
+    <h3 style="margin-top:14px">On any system, from the project folder</h3>
+    <pre>uv sync                              # installs dbt
+docker compose up -d warehouse       # starts Postgres on port 5440
+uv run python -m order_system        # starts the order system; leave it running</pre>
+    <p style="margin-top:10px">In a second terminal:</p>
+    <pre>uv run python -m order_system.clock --morning 2026-06-08
+cd src/m4_models_and_tests
+uv run python -m daily_orders                 # extract, load, then dbt build
+uv run python -m daily_orders --freshness     # is the raw data recent?
+uv run python -m daily_orders --full-refresh  # rebuild every day of the report
+uv run pytest                                 # takes over a minute: it runs dbt many times</pre>
+    <p style="margin-top:10px">To use dbt directly, as an analyst would:</p>
+    <pre>cd dbt_project
+uv run dbt build --profiles-dir .
+uv run dbt test --select orders --profiles-dir .</pre>
+  </section>
+
+  <p class="foot">Every number on this page is written by <code>daily_orders/flow_data.py</code> from a real run of this milestone's code, and a test checks that they still match. All data is fictional. Arden does not exist.</p>
+</div>
+
+<script id="page-data" type="application/json">
+{
+ "dbt": {
+  "models": 7,
+  "tests": 31
+ },
+ "load": {
+  "read": 102,
+  "raw": 328,
+  "orders": 251,
+  "items": 842,
+  "report_rows": 24
+ },
+ "refund": {
+  "order": 1130,
+  "by": "$5.78",
+  "day": "Fri 06-05"
+ },
+ "again": {
+  "same": "identical",
+  "read": 62
+ },
+ "bad": {
+  "order": 1130,
+  "test": "accepted_values_orders_status",
+  "skipped": "daily_orders",
+  "kept": "kept its last good numbers"
+ },
+ "fresh": {
+  "now": "pass",
+  "later": "error: stale"
+ },
+ "rebuild": {
+  "models": 7,
+  "same": "identical"
+ },
+ "monday": {
+  "y": "Sun 06-07",
+  "orders": 30,
+  "money": "$807.11"
+ },
+ "numbers": {
+  "notebooks": 7,
+  "tests": 31,
+  "tables": 7,
+  "rows": 31,
+  "words": 13
+ }
+}
+</script>
+<script>
+(function () {
+  'use strict';
+  var DATA = JSON.parse(document.getElementById('page-data').textContent);
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function get(path) { return path.split('.').reduce(function (o, k) { return o == null ? o : o[k]; }, DATA); }
+  function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+
+  // Fill every number from the data.
+  document.querySelectorAll('[data-k]').forEach(function (node) { node.textContent = get(node.dataset.k); });
+
+  // The chart of API calls per morning.
+  var chart = document.getElementById('chart'), limit = DATA.load ? DATA.load.limit : 0;
+  DATA.growth = chart ? DATA.growth : [];
+  var most = Math.max.apply(null, DATA.growth.map(function (g) { return g.calls; }));
+  DATA.growth.forEach(function (g) {
+    var row = el('div', 'chart-row' + (g.ok ? '' : ' over'));
+    row.appendChild(el('span', null, g.day));
+    var track = el('div', 'track'), fill = el('i'), mark = el('span', 'limit');
+    fill.dataset.width = (g.calls / (most + 1) * 100) + '%';
+    mark.style.left = (limit / (most + 1) * 100) + '%';
+    track.appendChild(fill); track.appendChild(mark);
+    row.appendChild(track);
+    row.appendChild(el('span', 'what', g.ok ? g.calls + ' calls · ' + g.orders + ' orders' : g.calls + ' calls needed · refused'));
+    chart.appendChild(row);
+  });
+  if (chart) chart.appendChild(el('p', 'legend', 'The dark line is the limit: ' + limit + ' calls in 10 seconds.'));
+
+  function grow(root) {
+    root.querySelectorAll('.track i').forEach(function (i) { i.style.width = i.dataset.width; });
+    root.querySelectorAll('.meter i').forEach(function (i) { i.style.width = (get(i.dataset.w) / get(i.dataset.of) * 100) + '%'; });
+  }
+  function countUp(node) {
+    var target = Number(get(node.dataset.k));
+    if (reduce || !isFinite(target)) return;
+    var start = performance.now();
+    (function tick(now) {
+      var t = Math.min(1, (now - start) / 900);
+      node.textContent = Math.round(target * (1 - Math.pow(1 - t, 3)));
+      if (t < 1) requestAnimationFrame(tick);
+    })(start);
+  }
+
+  // Reveal things as they scroll into view.
+  document.documentElement.classList.add('js');
+  var waiting = Array.prototype.slice.call(document.querySelectorAll('.rise, #chart'));
+  function reveal() {
+    var line = window.innerHeight * 0.92;
+    waiting = waiting.filter(function (node) {
+      if (node.getBoundingClientRect().top > line) return true;
+      node.classList.add('in');
+      grow(node);
+      node.querySelectorAll('[data-count]').forEach(countUp);
+      return false;
+    });
+  }
+  window.addEventListener('scroll', reveal, { passive: true });
+  window.addEventListener('resize', reveal);
+  reveal();
+
+  // The small pipeline lights up stage by stage.
+  var boxes = Array.prototype.slice.call(document.querySelectorAll('#pipe .box'));
+  function runPipe() {
+    boxes.forEach(function (b) { b.classList.remove('lit'); });
+    boxes.filter(function (b) { return !b.classList.contains('ghost'); }).forEach(function (box, i) {
+      setTimeout(function () { box.classList.add('lit'); }, reduce ? 0 : 150 + i * 650);
+    });
+  }
+  document.getElementById('run').addEventListener('click', runPipe);
+  new IntersectionObserver(function (entries, observer) {
+    if (entries[0].isIntersecting) { runPipe(); observer.disconnect(); }
+  }, { threshold: 0.5 }).observe(document.getElementById('pipe'));
+
+  // Mark the section you are reading in the jump links.
+  var links = document.querySelectorAll('.nav a');
+  var spy = new IntersectionObserver(function (entries) {
+    entries.forEach(function (entry) {
+      if (!entry.isIntersecting) return;
+      links.forEach(function (a) { a.classList.toggle('on', a.getAttribute('href') === '#' + entry.target.id); });
+    });
+  }, { rootMargin: '-45% 0px -50% 0px' });
+  document.querySelectorAll('section[id]').forEach(function (s) { spy.observe(s); });
+})();
+</script>
+</body>
+</html>

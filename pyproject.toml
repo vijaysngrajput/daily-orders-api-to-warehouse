@@ -11,6 +11,8 @@ dependencies = [
     "nbclient>=0.10.0",
     "nbformat>=5.10.0",
     "pandas>=2.3.0",
+    "psycopg[binary]>=3.2.0",
+    "dbt-postgres>=1.9.0",
     "tzdata>=2025.2",
     "uvicorn>=0.34.0",
 ]
@@ -32,6 +34,7 @@ packages = ["order_system"]
 
 [tool.ruff]
 line-length = 100
+extend-exclude = ["*.ipynb"]
 src = ["src/*", "src/*/tests", "."]
 
 [tool.ruff.lint]

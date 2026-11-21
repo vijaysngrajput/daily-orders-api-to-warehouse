@@ -1,0 +1,13 @@
+# How dbt reaches the warehouse. The values come from the environment, with the project's defaults.
+arden:
+  target: local
+  outputs:
+    local:
+      type: postgres
+      host: "{{ env_var('ARDEN_PG_HOST', '127.0.0.1') }}"
+      port: "{{ env_var('ARDEN_PG_PORT', '5440') | int }}"
+      user: arden
+      password: arden
+      dbname: "{{ env_var('ARDEN_DBT_DATABASE', 'arden_m4') }}"
+      schema: public
+      threads: 1

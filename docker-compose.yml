@@ -1,0 +1,79 @@
+# Everything in this project that runs in Docker.
+#
+# From milestone 2: the warehouse.
+#   docker compose up -d warehouse                    start Postgres
+#   docker compose down                               stop it (the data is kept)
+#   docker compose down -v                            stop it and delete the data
+#
+# From milestone 5: the schedule.
+#   docker compose --profile schedule up -d --build   start the warehouse, the order system and Airflow
+#   docker compose --profile schedule down            stop them
+#
+# The warehouse listens on port 5440 of your computer, so it does not clash with a Postgres you already run.
+# Airflow's page is at http://localhost:8080 . No password is needed.
+
+# One image serves both the order system and Airflow. The airflow service builds it.
+x-arden-image: &arden-image
+  image: arden-airflow:3.4.0
+  volumes:
+    - .:/opt/arden
+
+services:
+  warehouse:
+    image: postgres:16
+    container_name: arden-warehouse
+    environment:
+      POSTGRES_USER: arden
+      POSTGRES_PASSWORD: arden
+      POSTGRES_DB: arden
+    ports:
+      - "${ARDEN_PG_PORT:-5440}:5432"
+    volumes:
+      - arden_warehouse:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U arden -d arden"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  # The fake order system, inside Docker, so Airflow can reach it. Same port as before: 8010.
+  # Stop the one running in your terminal first.
+  order-system:
+    <<: *arden-image
+    profiles: [schedule]
+    container_name: arden-order-system
+    pull_policy: never                  # the image is built here, not downloaded
+    entrypoint: ["/opt/arden-venv/bin/python", "-m", "order_system"]
+    working_dir: /opt/arden
+    environment:
+      ARDEN_API_HOST: 0.0.0.0
+    ports:
+      - "8010:8010"
+
+  # Airflow: scheduler, DAG processor and web page in one container. For learning only.
+  airflow:
+    <<: *arden-image
+    profiles: [schedule]
+    container_name: arden-airflow
+    build:
+      context: docker/airflow
+    command: standalone
+    environment:
+      AIRFLOW__CORE__DAGS_FOLDER: /opt/arden/src/m5_on_a_schedule/dags
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_ALL_ADMINS: "true"    # no login on your own laptop
+      ARDEN_API_URL: http://order-system:8010
+      ARDEN_PG_HOST: warehouse
+      ARDEN_PG_PORT: "5432"
+      DBT_TARGET_PATH: /tmp/dbt-target
+      DBT_LOG_PATH: /tmp/dbt-logs
+    ports:
+      - "8080:8080"
+    depends_on:
+      warehouse:
+        condition: service_healthy
+      order-system:
+        condition: service_started
+
+volumes:
+  arden_warehouse:
